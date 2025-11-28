@@ -51,11 +51,24 @@ go install github.com/yourusername/azure-pr-cli@latest
 
 ### Environment Variables
 
+You can set the following environment variables:
+
 ```bash
 export AZURE_DEVOPS_PAT="your-personal-access-token"
 export AZURE_DEVOPS_ORG="your-organization"
 export AZURE_DEVOPS_PROJECT="your-project"
 ```
+
+Alternatively, create a `.env` file in the project root with the same variables:
+
+```bash
+# .env
+AZURE_DEVOPS_PAT=your-personal-access-token
+AZURE_DEVOPS_ORG=your-organization
+AZURE_DEVOPS_PROJECT=your-project
+```
+
+The application will automatically load the `.env` file if it exists.
 
 ## Usage
 
