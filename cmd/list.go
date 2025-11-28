@@ -1,0 +1,166 @@
+package cmd
+
+import (
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/spf13/cobra"
+	"github.com/yourusername/azure-pr-cli/internal/client"
+	"github.com/yourusername/azure-pr-cli/internal/config"
+	"github.com/yourusername/azure-pr-cli/internal/formatter"
+)
+
+var (
+	organization string
+	project      string
+	repository   string
+	pat          string
+	fromDate     string
+	toDate       string
+	status       string
+	outputFormat string
+)
+
+var listCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List pull requests from Azure DevOps",
+	Long: `Fetch and display pull requests from an Azure DevOps repository.
+
+By default, this command fetches completed PRs from the current month.
+You can customize the date range and status filters.`,
+	Example: `  # List PRs for current month
+  azure-pr-cli list -o myorg -p myproject -r myrepo
+
+  # List PRs with custom date range
+  azure-pr-cli list -o myorg -p myproject -r myrepo --from 2024-01-01 --to 2024-01-31
+
+  # List all PRs (any status)
+  azure-pr-cli list -o myorg -p myproject -r myrepo --status all
+
+  # Output as JSON
+  azure-pr-cli list -o myorg -p myproject -r myrepo --format json`,
+	RunE: runList,
+}
+
+func init() {
+	rootCmd.AddCommand(listCmd)
+
+	// Required flags
+	listCmd.Flags().StringVarP(&organization, "organization", "o", "", "Azure DevOps organization (or set AZURE_DEVOPS_ORG)")
+	listCmd.Flags().StringVarP(&project, "project", "p", "", "Azure DevOps project (or set AZURE_DEVOPS_PROJECT)")
+	listCmd.Flags().StringVarP(&repository, "repository", "r", "", "Repository name (required)")
+	listCmd.MarkFlagRequired("repository")
+
+	// Authentication
+	listCmd.Flags().StringVar(&pat, "pat", "", "Personal Access Token (or set AZURE_DEVOPS_PAT)")
+
+	// Optional filters
+	listCmd.Flags().StringVar(&fromDate, "from", "", "Start date (YYYY-MM-DD), defaults to start of current month")
+	listCmd.Flags().StringVar(&toDate, "to", "", "End date (YYYY-MM-DD), defaults to now")
+	listCmd.Flags().StringVar(&status, "status", "completed", "PR status filter: active, completed, abandoned, all")
+
+	// Output options
+	listCmd.Flags().StringVarP(&outputFormat, "format", "f", "table", "Output format: table, json, csv")
+}
+
+func runList(cmd *cobra.Command, args []string) error {
+	// Load configuration
+	cfg, err := config.LoadConfig(organization, project, repository, pat)
+	if err != nil {
+		return fmt.Errorf("configuration error: %w", err)
+	}
+
+	if verbose {
+		fmt.Fprintf(os.Stderr, "Organization: %s\n", cfg.Organization)
+		fmt.Fprintf(os.Stderr, "Project: %s\n", cfg.Project)
+		fmt.Fprintf(os.Stderr, "Repository: %s\n", cfg.Repository)
+	}
+
+	// Parse date range
+	from, to, err := parseDateRange(fromDate, toDate)
+	if err != nil {
+		return fmt.Errorf("date parsing error: %w", err)
+	}
+
+	if verbose {
+		fmt.Fprintf(os.Stderr, "Date range: %s to %s\n", from.Format("2006-01-02"), to.Format("2006-01-02"))
+		fmt.Fprintf(os.Stderr, "Status filter: %s\n", status)
+	}
+
+	// Create Azure DevOps client
+	azureClient := client.NewAzureDevOpsClient(cfg)
+
+	// Fetch pull requests
+	if verbose {
+		fmt.Fprintf(os.Stderr, "Fetching pull requests...\n")
+	}
+
+	prs, err := azureClient.GetPullRequests(from, to, status)
+	if err != nil {
+		return fmt.Errorf("failed to fetch pull requests: %w", err)
+	}
+
+	if verbose {
+		fmt.Fprintf(os.Stderr, "Found %d pull requests\n", len(prs))
+	}
+
+	// Format and display output
+	var formatterInstance formatter.Formatter
+	switch outputFormat {
+	case "json":
+		formatterInstance = formatter.NewJSONFormatter()
+	case "csv":
+		formatterInstance = formatter.NewCSVFormatter()
+	case "table":
+		formatterInstance = formatter.NewTableFormatter()
+	default:
+		return fmt.Errorf("unsupported output format: %s", outputFormat)
+	}
+
+	output, err := formatterInstance.Format(prs)
+	if err != nil {
+		return fmt.Errorf("formatting error: %w", err)
+	}
+
+	fmt.Println(output)
+
+	return nil
+}
+
+func parseDateRange(from, to string) (time.Time, time.Time, error) {
+	now := time.Now()
+
+	var fromTime, toTime time.Time
+	var err error
+
+	// Parse 'from' date
+	if from == "" {
+		// Default to start of current month
+		fromTime = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	} else {
+		fromTime, err = time.Parse("2006-01-02", from)
+		if err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("invalid from date format: %w", err)
+		}
+	}
+
+	// Parse 'to' date
+	if to == "" {
+		// Default to now
+		toTime = now
+	} else {
+		toTime, err = time.Parse("2006-01-02", to)
+		if err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("invalid to date format: %w", err)
+		}
+		// Set to end of day
+		toTime = time.Date(toTime.Year(), toTime.Month(), toTime.Day(), 23, 59, 59, 0, time.UTC)
+	}
+
+	if fromTime.After(toTime) {
+		return time.Time{}, time.Time{}, fmt.Errorf("from date must be before to date")
+	}
+
+	return fromTime, toTime, nil
+}
