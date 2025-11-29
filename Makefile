@@ -1,4 +1,4 @@
-.PHONY: help build install clean test test-coverage test-unit test-integration lint fmt vet run build-all docker-build
+.PHONY: help build install clean test test-coverage test-unit lint fmt vet run build-all docker-build
 
 # Variables
 BINARY_NAME=azure-pr-cli
@@ -64,10 +64,7 @@ test: ## Run all tests
 test-unit: ## Run unit tests only
 	@echo "$(COLOR_BLUE)Running unit tests...$(COLOR_RESET)"
 	$(GOTEST) -v -short -race -coverprofile=coverage.out ./...
-
-test-integration: ## Run integration tests
-	@echo "$(COLOR_BLUE)Running integration tests...$(COLOR_RESET)"
-	$(GOTEST) -v -run Integration ./test/integration/...
+	@echo "$(COLOR_GREEN)✓ Unit tests complete$(COLOR_RESET)"
 
 test-coverage: test ## Generate test coverage report
 	@echo "$(COLOR_BLUE)Generating coverage report...$(COLOR_RESET)"

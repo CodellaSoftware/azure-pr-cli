@@ -131,7 +131,6 @@ azure-pr-cli/
 │   ├── config/           # Configuration management
 │   ├── formatter/        # Output formatters
 │   └── models/           # Data models
-├── test/                 # Additional test files
 └── main.go              # Application entry point
 ```
 

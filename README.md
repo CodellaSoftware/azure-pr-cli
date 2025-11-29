@@ -200,9 +200,6 @@ azure-pr-cli/
 │       └── pullrequest.go
 ├── pkg/                  # Public libraries
 │   └── azuredevops/     # Azure DevOps utilities
-├── test/                # Additional test files
-│   ├── fixtures/        # Test fixtures
-│   └── integration/     # Integration tests
 ├── .github/             # GitHub configuration
 │   └── workflows/       # CI/CD workflows
 ├── main.go              # Application entry point
@@ -233,18 +230,13 @@ make test-coverage
 ```bash
 go test ./internal/client -v
 go test ./internal/formatter -v
-```
-
-### Run Integration Tests
-
-```bash
-make test-integration
+go test ./internal/config -v
 ```
 
 ### Generate Coverage Report
 
 ```bash
-make coverage-html
+make test-coverage
 ```
 
 ## Building

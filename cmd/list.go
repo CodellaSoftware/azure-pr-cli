@@ -78,7 +78,7 @@ func init() {
 
 	// Optional filters
 	listCmd.Flags().StringVar(&fromDate, "from", "", "Start date (YYYY-MM-DD), defaults to start of current month")
-	listCmd.Flags().StringVar(&toDate, "to", "", "End date (YYYY-MM-DD), defaults to now")
+	listCmd.Flags().StringVar(&toDate, "to", "", "End date (YYYY-MM-DD), defaults to end of current month")
 	listCmd.Flags().StringVar(&status, "status", "completed", "PR status filter: active, completed, abandoned, all")
 
 	// Output options
@@ -247,8 +247,9 @@ func parseDateRange(from, to string) (time.Time, time.Time, error) {
 
 	// Parse 'to' date
 	if to == "" {
-		// Default to now
-		toTime = now
+		// Default to end of current month
+		nextMonth := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, time.UTC)
+		toTime = nextMonth.Add(-time.Second)
 	} else {
 		toTime, err = time.Parse("2006-01-02", to)
 		if err != nil {
