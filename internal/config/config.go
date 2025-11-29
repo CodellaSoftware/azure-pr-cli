@@ -5,7 +5,6 @@ import (
 	"os"
 )
 
-// Config holds the application configuration
 type Config struct {
 	Organization string
 	Project      string
@@ -13,7 +12,6 @@ type Config struct {
 	PAT          string
 }
 
-// LoadConfig loads configuration from flags and environment variables
 func LoadConfig(org, project, repo, pat string) (*Config, error) {
 	cfg := &Config{
 		Organization: getValueOrEnv(org, "AZURE_DEVOPS_ORG"),
@@ -22,7 +20,6 @@ func LoadConfig(org, project, repo, pat string) (*Config, error) {
 		PAT:          getValueOrEnv(pat, "AZURE_DEVOPS_PAT"),
 	}
 
-	// Validate required fields
 	if cfg.Organization == "" {
 		return nil, fmt.Errorf("organization is required (use -o flag or AZURE_DEVOPS_ORG env var)")
 	}
@@ -39,7 +36,6 @@ func LoadConfig(org, project, repo, pat string) (*Config, error) {
 	return cfg, nil
 }
 
-// getValueOrEnv returns the value if not empty, otherwise returns the environment variable
 func getValueOrEnv(value, envKey string) string {
 	if value != "" {
 		return value
@@ -47,7 +43,6 @@ func getValueOrEnv(value, envKey string) string {
 	return os.Getenv(envKey)
 }
 
-// Validate checks if the configuration is valid
 func (c *Config) Validate() error {
 	if c.Organization == "" {
 		return fmt.Errorf("organization cannot be empty")

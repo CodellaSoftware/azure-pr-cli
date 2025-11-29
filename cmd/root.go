@@ -8,16 +8,13 @@ import (
 )
 
 var (
-	// Version information
 	Version   = "dev"
 	GitCommit = "unknown"
 	BuildDate = "unknown"
 
-	// Global flags
 	verbose bool
 )
 
-// rootCmd represents the base command
 var rootCmd = &cobra.Command{
 	Use:   "azure-pr-cli",
 	Short: "Azure DevOps Pull Request CLI Tool",
@@ -30,7 +27,6 @@ with support for filtering by date ranges and various output formats.`,
 	SilenceErrors: true,
 }
 
-// Execute runs the root command
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

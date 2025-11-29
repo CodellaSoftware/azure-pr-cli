@@ -1,6 +1,7 @@
 # Azure DevOps PR CLI
 
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![CI](https://github.com/CodellaSoftware/azure-pr-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/CodellaSoftware/azure-pr-cli/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A professional CLI tool for fetching and displaying Pull Requests from Azure DevOps repositories with Excel export capabilities.

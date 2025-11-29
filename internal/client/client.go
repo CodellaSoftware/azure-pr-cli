@@ -17,14 +17,12 @@ const (
 	baseURL    = "https://dev.azure.com"
 )
 
-// AzureDevOpsClient is a client for interacting with Azure DevOps API
 type AzureDevOpsClient struct {
 	config     *config.Config
 	httpClient *http.Client
 	baseURL    string
 }
 
-// NewAzureDevOpsClient creates a new Azure DevOps client
 func NewAzureDevOpsClient(cfg *config.Config) *AzureDevOpsClient {
 	return &AzureDevOpsClient{
 		config: cfg,
@@ -35,7 +33,6 @@ func NewAzureDevOpsClient(cfg *config.Config) *AzureDevOpsClient {
 	}
 }
 
-// GetPullRequests fetches pull requests from Azure DevOps
 func (c *AzureDevOpsClient) GetPullRequests(from, to time.Time, status string) ([]models.PullRequest, error) {
 	url := c.buildURL(from, status)
 
@@ -67,13 +64,11 @@ func (c *AzureDevOpsClient) GetPullRequests(from, to time.Time, status string) (
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	// Filter PRs by date range and status
 	filteredPRs := c.filterPRs(prResponse.Value, from, to, status)
 
 	return filteredPRs, nil
 }
 
-// buildURL constructs the API URL
 func (c *AzureDevOpsClient) buildURL(from time.Time, status string) string {
 	url := fmt.Sprintf(
 		"%s/%s/%s/_apis/git/repositories/%s/pullrequests?api-version=%s",
@@ -84,30 +79,25 @@ func (c *AzureDevOpsClient) buildURL(from time.Time, status string) string {
 		apiVersion,
 	)
 
-	// Add status filter if not "all"
 	if status != "all" {
 		url += fmt.Sprintf("&searchCriteria.status=%s", status)
 	}
 
-	// Add date filter
 	url += fmt.Sprintf("&searchCriteria.minTime=%s", from.Format(time.RFC3339))
 
 	return url
 }
 
-// setAuthHeaders sets authentication headers
 func (c *AzureDevOpsClient) setAuthHeaders(req *http.Request) {
 	auth := base64.StdEncoding.EncodeToString([]byte(":" + c.config.PAT))
 	req.Header.Add("Authorization", "Basic "+auth)
 	req.Header.Add("Content-Type", "application/json")
 }
 
-// filterPRs filters pull requests by date range and status
 func (c *AzureDevOpsClient) filterPRs(prs []models.PullRequest, from, to time.Time, status string) []models.PullRequest {
 	var filtered []models.PullRequest
 
 	for _, pr := range prs {
-		// Check date range
 		var prDate time.Time
 		if pr.Status == "completed" || pr.Status == "abandoned" {
 			prDate = pr.ClosedDate
@@ -119,7 +109,6 @@ func (c *AzureDevOpsClient) filterPRs(prs []models.PullRequest, from, to time.Ti
 			continue
 		}
 
-		// Check status filter
 		if status != "all" && pr.Status != status {
 			continue
 		}
@@ -130,12 +119,10 @@ func (c *AzureDevOpsClient) filterPRs(prs []models.PullRequest, from, to time.Ti
 	return filtered
 }
 
-// SetHTTPClient sets a custom HTTP client (useful for testing)
 func (c *AzureDevOpsClient) SetHTTPClient(client *http.Client) {
 	c.httpClient = client
 }
 
-// SetBaseURL sets a custom base URL (useful for testing)
 func (c *AzureDevOpsClient) SetBaseURL(url string) {
 	c.baseURL = url
 }

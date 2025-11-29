@@ -8,15 +8,12 @@ import (
 	"github.com/yourusername/azure-pr-cli/internal/models"
 )
 
-// TableFormatter formats PRs as a table
 type TableFormatter struct{}
 
-// NewTableFormatter creates a new table formatter
 func NewTableFormatter() *TableFormatter {
 	return &TableFormatter{}
 }
 
-// Format formats pull requests as a table
 func (f *TableFormatter) Format(prs []models.PullRequest, dateFormat string, options map[string]string) (string, error) {
 	if len(prs) == 0 {
 		return "No pull requests found for the specified criteria.\n", nil
@@ -50,7 +47,6 @@ func (f *TableFormatter) Format(prs []models.PullRequest, dateFormat string, opt
 
 	table.Render()
 
-	// Add summary
 	buf.WriteString(fmt.Sprintf("\nTotal PRs: %d\n", len(prs)))
 
 	return buf.String(), nil
