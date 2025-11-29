@@ -145,6 +145,32 @@ func TestFormatters_AllImplementInterface(t *testing.T) {
 	var _ Formatter = &TableFormatter{}
 	var _ Formatter = &JSONFormatter{}
 	var _ Formatter = &CSVFormatter{}
+	// XLSXFormatter implements a different interface (returns []byte)
+}
+
+func TestXLSXFormatter(t *testing.T) {
+	formatter := NewXLSXFormatter()
+	prs := createTestPRs()
+
+	output, err := formatter.Format(prs, "", map[string]string{"org": "testorg", "project": "testproject"})
+
+	require.NoError(t, err)
+	assert.NotEmpty(t, output)
+	assert.True(t, len(output) > 0, "XLSX output should not be empty")
+
+	// Basic check that it looks like XLSX (starts with PK for ZIP-based format)
+	assert.Equal(t, "PK", string(output[:2]), "XLSX should be a ZIP file starting with PK")
+}
+
+func TestXLSXFormatter_EmptyList(t *testing.T) {
+	formatter := NewXLSXFormatter()
+	prs := []models.PullRequest{}
+
+	output, err := formatter.Format(prs, "", map[string]string{"org": "testorg", "project": "testproject"})
+
+	require.NoError(t, err)
+	assert.NotEmpty(t, output)
+	assert.True(t, len(output) > 0, "XLSX output should not be empty even for empty list")
 }
 
 func TestFormatters_HandleSpecialCharacters(t *testing.T) {
@@ -177,4 +203,10 @@ func TestFormatters_HandleSpecialCharacters(t *testing.T) {
 			assert.NotEmpty(t, output)
 		})
 	}
+
+	// Test XLSX separately since it has different return type
+	xlsxFormatter := NewXLSXFormatter()
+	xlsxOutput, err := xlsxFormatter.Format(prs, "", map[string]string{"org": "testorg", "project": "testproject"})
+	require.NoError(t, err)
+	assert.NotEmpty(t, xlsxOutput)
 }

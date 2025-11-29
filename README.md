@@ -101,6 +101,9 @@ azure-pr-cli list -o myorg -p myproject -r myrepo --format csv
 # Save output to CSV file
 azure-pr-cli list -o myorg -p myproject -r myrepo --save-csv prs.csv
 
+# Save as Excel XLSX file (with clickable hyperlinks)
+azure-pr-cli list -o myorg -p myproject -r myrepo --save-csv prs.xlsx
+
 # Custom date format (Go time format, default: 02.01.2006)
 azure-pr-cli list -o myorg -p myproject -r myrepo --date-format "2006-01-02"
 
