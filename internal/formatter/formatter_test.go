@@ -181,6 +181,108 @@ func TestXLSXFormatter_EmptyList(t *testing.T) {
 	assert.True(t, len(output) > 0, "XLSX output should not be empty even for empty list")
 }
 
+func TestXLSXFormatter_WithDateFormat(t *testing.T) {
+	formatter := NewXLSXFormatter()
+	prs := createTestPRs()
+
+	output, err := formatter.Format(prs, "02.01.2006", map[string]string{"org": "testorg", "project": "testproject"})
+
+	require.NoError(t, err)
+	assert.NotEmpty(t, output)
+	assert.True(t, len(output) > 0, "XLSX output should not be empty")
+	assert.Equal(t, "PK", string(output[:2]), "XLSX should be a ZIP file starting with PK")
+}
+
+func TestXLSXFormatter_MissingOptions(t *testing.T) {
+	formatter := NewXLSXFormatter()
+	prs := createTestPRs()
+
+	// Test with missing org/project - should still work but URLs might be malformed
+	output, err := formatter.Format(prs, "", map[string]string{})
+
+	require.NoError(t, err)
+	assert.NotEmpty(t, output)
+	assert.True(t, len(output) > 0, "XLSX output should not be empty")
+}
+
+func TestXLSXFormatter_LongContent(t *testing.T) {
+	formatter := NewXLSXFormatter()
+
+	// Create PR with very long title and description
+	longTitle := strings.Repeat("Very long title with special characters: áéíóú ñ & < > \" quotes ", 10)
+	prs := []models.PullRequest{
+		{
+			ID:          1,
+			Title:       longTitle,
+			Description: "Long description",
+			Status:      "completed",
+			Repository: models.Repository{
+				Name: "test-repo",
+			},
+			ClosedDate: time.Now(),
+			URL:        "https://dev.azure.com/org/project/_git/repo/pullrequest/1",
+		},
+	}
+
+	output, err := formatter.Format(prs, "02.01.2006", map[string]string{"org": "testorg", "project": "testproject"})
+
+	require.NoError(t, err)
+	assert.NotEmpty(t, output)
+	assert.True(t, len(output) > 0, "XLSX output should handle long content")
+	assert.Equal(t, "PK", string(output[:2]), "XLSX should be a ZIP file starting with PK")
+}
+
+func TestJSONFormatter_WithDateFormat(t *testing.T) {
+	formatter := NewJSONFormatter()
+	prs := createTestPRs()
+
+	output, err := formatter.Format(prs, "2006-01-02", map[string]string{})
+
+	require.NoError(t, err)
+	assert.NotEmpty(t, output)
+
+	var parsed []map[string]interface{}
+	err = json.Unmarshal([]byte(output), &parsed)
+	require.NoError(t, err)
+	assert.Len(t, parsed, 2)
+	assert.Equal(t, float64(1), parsed[0]["index"])
+	assert.Equal(t, float64(2), parsed[1]["index"])
+}
+
+func TestCSVFormatter_WithCustomDelimiter(t *testing.T) {
+	formatter := NewCSVFormatter()
+	prs := createTestPRs()
+
+	output, err := formatter.Format(prs, "", map[string]string{"delimiter": ","})
+
+	require.NoError(t, err)
+	assert.NotEmpty(t, output)
+
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	assert.Len(t, lines, 3) // Header + 2 data rows
+
+	// Check that comma delimiter is used
+	assert.Contains(t, lines[0], "#,REPO NAME,PR NAME")
+	assert.Contains(t, lines[1], "test-repo")
+}
+
+func TestCSVFormatter_EmptyDelimiter(t *testing.T) {
+	formatter := NewCSVFormatter()
+	prs := createTestPRs()
+
+	// Empty delimiter should default to semicolon
+	output, err := formatter.Format(prs, "", map[string]string{"delimiter": ""})
+
+	require.NoError(t, err)
+	assert.NotEmpty(t, output)
+
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	assert.Len(t, lines, 3) // Header + 2 data rows
+
+	// Check that semicolon delimiter is used (default)
+	assert.Contains(t, lines[0], "#;REPO NAME;PR NAME")
+}
+
 func TestFormatters_HandleSpecialCharacters(t *testing.T) {
 	prs := []models.PullRequest{
 		{

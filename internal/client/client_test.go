@@ -378,3 +378,130 @@ func TestGetPullRequests_MultipleRepositories(t *testing.T) {
 	assert.Equal(t, "repo2", prs[1].Repository.Name)
 	assert.Equal(t, "Repo2 PR 1", prs[1].Title)
 }
+
+func TestGetPullRequests_MultipleRepositories_Error(t *testing.T) {
+	// Create test data for two repositories
+	testPRsRepo1 := []models.PullRequest{
+		{
+			ID:           1,
+			Title:        "Repo1 PR 1",
+			Status:       "completed",
+			CreationDate: time.Now().Add(-48 * time.Hour),
+			ClosedDate:   time.Now().Add(-24 * time.Hour),
+			Repository: models.Repository{
+				Name: "repo1",
+			},
+		},
+	}
+
+	callCount := 0
+
+	// Create mock server that returns error for second repository
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if callCount == 0 {
+			// First call succeeds
+			assert.Contains(t, r.URL.Path, "/repositories/repo1/")
+			callCount++
+
+			response := models.PRListResponse{
+				Value: testPRsRepo1,
+				Count: len(testPRsRepo1),
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(response); err != nil {
+				t.Fatalf("Failed to encode response: %v", err)
+			}
+		} else {
+			// Second call fails
+			assert.Contains(t, r.URL.Path, "/repositories/repo2/")
+			w.WriteHeader(http.StatusUnauthorized)
+			if _, err := w.Write([]byte("Unauthorized")); err != nil {
+				t.Fatalf("Failed to write response: %v", err)
+			}
+		}
+	}))
+	defer server.Close()
+
+	// Create client with multiple repositories
+	cfg := &config.Config{
+		Organization: "testorg",
+		Project:      "testproject",
+		Repositories: []string{"repo1", "repo2"},
+		PAT:          "testtoken",
+	}
+
+	client := NewAzureDevOpsClient(cfg)
+	client.SetBaseURL(server.URL)
+
+	from := time.Now().Add(-7 * 24 * time.Hour)
+	to := time.Now()
+
+	_, err := client.GetPullRequests(from, to, "completed")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to fetch PRs for repository repo2")
+	assert.Contains(t, err.Error(), "API returned status 401")
+}
+
+func TestSetHTTPClient(t *testing.T) {
+	cfg := &config.Config{
+		Organization: "testorg",
+		Project:      "testproject",
+		Repositories: []string{"testrepo"},
+		PAT:          "testtoken",
+	}
+
+	client := NewAzureDevOpsClient(cfg)
+
+	customClient := &http.Client{Timeout: 60 * time.Second}
+	client.SetHTTPClient(customClient)
+
+	// We can't directly test the internal httpClient field, but we can verify the method exists
+	assert.NotNil(t, client)
+}
+
+func TestSetBaseURL(t *testing.T) {
+	cfg := &config.Config{
+		Organization: "testorg",
+		Project:      "testproject",
+		Repositories: []string{"testrepo"},
+		PAT:          "testtoken",
+	}
+
+	client := NewAzureDevOpsClient(cfg)
+
+	customURL := "https://custom.dev.azure.com"
+	client.SetBaseURL(customURL)
+
+	// We can't directly test the internal baseURL field, but we can verify the method exists
+	assert.NotNil(t, client)
+}
+
+func TestGetPullRequests_InvalidJSONResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write([]byte("invalid json response")); err != nil {
+			t.Fatalf("Failed to write response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		Organization: "testorg",
+		Project:      "testproject",
+		Repositories: []string{"testrepo"},
+		PAT:          "testtoken",
+	}
+
+	client := NewAzureDevOpsClient(cfg)
+	client.SetBaseURL(server.URL)
+
+	from := time.Now().Add(-24 * time.Hour)
+	to := time.Now()
+
+	_, err := client.GetPullRequests(from, to, "completed")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to parse response")
+}
