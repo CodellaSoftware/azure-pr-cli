@@ -16,6 +16,7 @@ A professional CLI tool for fetching and displaying Pull Requests from Azure Dev
 - ✅ Comprehensive test coverage
 - 🏗️ Built with Cobra CLI framework
 - 📁 Automatic format detection from file extensions
+- 🔄 **Multiple repository support** - fetch PRs from multiple repos in one command
 
 ## Excel XLSX Features
 
@@ -26,6 +27,28 @@ The XLSX export format provides professional Excel spreadsheets with:
 - **Professional formatting** with headers and data properly organized
 - **Default filename** `pull-requests.xlsx` when no output file is specified
 - **Extension-based format detection** - save as `.xlsx` for automatic XLSX output
+
+## Multiple Repository Support
+
+Fetch pull requests from multiple repositories in a single command using comma-separated repository names:
+
+```bash
+# Fetch PRs from multiple repositories
+azure-pr-cli list -o myorg -p myproject -r repo1,repo2,repo3
+
+# Works with all output formats
+azure-pr-cli list -o myorg -p myproject -r repo1,repo2,repo3 --format json
+azure-pr-cli list -o myorg -p myproject -r repo1,repo2,repo3 --output-file multi-repo-report.xlsx
+
+# Combine with date ranges and filters
+azure-pr-cli list -o myorg -p myproject -r repo1,repo2 --from 2024-01-01 --to 2024-01-31 --status all
+```
+
+**Features:**
+- **Sorted output** - Results are sorted by repository name, then by completion date (newest first)
+- **Index column** - Each PR includes a sequential index number across all repositories
+- **Unified reporting** - All PRs from specified repositories are combined into a single report
+- **Error handling** - Continues processing other repositories if one fails
 
 ## Table of Contents
 
@@ -85,11 +108,16 @@ The application will automatically load the `.env` file if it exists.
 
 ## Usage
 
+**Default Behavior**: By default, the tool fetches **completed PRs from the current month** and saves them as an Excel file (`pull-requests.xlsx`).
+
 ### Basic Commands
 
 ```bash
-# List PRs and save as XLSX (default behavior)
+# List PRs from a single repository and save as XLSX (default behavior)
 azure-pr-cli list -o myorg -p myproject -r myrepo
+
+# List PRs from MULTIPLE repositories (comma-separated)
+azure-pr-cli list -o myorg -p myproject -r repo1,repo2,repo3
 
 # Using environment variables
 export AZURE_DEVOPS_ORG="myorg"
@@ -104,8 +132,11 @@ azure-pr-cli list -o myorg -p myproject -r myrepo
 ### Advanced Usage
 
 ```bash
-# Custom date range
+# Custom date range for single repository
 azure-pr-cli list -o myorg -p myproject -r myrepo --from 2024-01-01 --to 2024-01-31
+
+# Custom date range for MULTIPLE repositories
+azure-pr-cli list -o myorg -p myproject -r repo1,repo2,repo3 --from 2024-01-01 --to 2024-01-31
 
 # Output formats
 azure-pr-cli list -o myorg -p myproject -r myrepo --format table  # Console table
@@ -113,8 +144,8 @@ azure-pr-cli list -o myorg -p myproject -r myrepo --format json   # JSON output
 azure-pr-cli list -o myorg -p myproject -r myrepo --format csv    # CSV output
 
 # Save to specific files (format auto-detected from extension)
-azure-pr-cli list -o myorg -p myproject -r myrepo --output-file prs.csv
-azure-pr-cli list -o myorg -p myproject -r myrepo --output-file report.xlsx
+azure-pr-cli list -o myorg -p myproject -r repo1,repo2 --output-file prs.csv
+azure-pr-cli list -o myorg -p myproject -r repo1,repo2 --output-file report.xlsx
 
 # Custom date format (Go time format, default: 02.01.2006)
 azure-pr-cli list -o myorg -p myproject -r myrepo --date-format "2006-01-02"
@@ -122,8 +153,8 @@ azure-pr-cli list -o myorg -p myproject -r myrepo --date-format "2006-01-02"
 # CSV with custom delimiter (default: ;)
 azure-pr-cli list -o myorg -p myproject -r myrepo --format csv --delimiter ","
 
-# Filter by PR status
-azure-pr-cli list -o myorg -p myproject -r myrepo --status all  # active, completed, abandoned, all
+# Filter by PR status across multiple repositories
+azure-pr-cli list -o myorg -p myproject -r repo1,repo2 --status all  # active, completed, abandoned, all
 
 # Verbose output
 azure-pr-cli list -o myorg -p myproject -r myrepo -v
@@ -150,6 +181,23 @@ azure-pr-cli list --help
 # Show version
 azure-pr-cli version
 ```
+
+### Command Flags
+
+| Flag | Short | Description | Default |
+|------|-------|-------------|---------|
+| `--organization` | `-o` | Azure DevOps organization | Required |
+| `--project` | `-p` | Azure DevOps project | Required |
+| `--repository` | `-r` | **Repository name(s) - comma-separated for multiple repos** | Required |
+| `--from` | | Start date (YYYY-MM-DD) | Start of current month |
+| `--to` | | End date (YYYY-MM-DD) | End of current month |
+| `--status` | | PR status: active, completed, abandoned, all | completed |
+| `--format` | `-f` | Output format: table, json, csv, xlsx | xlsx |
+| `--output-file` | | Save to file (format from extension) | pull-requests.xlsx |
+| `--date-format` | | Date format (Go time format) | 02.01.2006 |
+| `--delimiter` | | CSV delimiter | ; |
+| `--pat` | | Personal Access Token | From env/AZURE_DEVOPS_PAT |
+| `--verbose` | `-v` | Enable verbose output for debugging | false |
 
 ## Development
 
@@ -299,3 +347,33 @@ For issues, questions, or contributions, please:
 - Open an issue on GitHub
 - Check existing issues and discussions
 - Review the documentation
+
+## Troubleshooting
+
+### Common Issues
+
+**Authentication Errors**
+- Ensure your PAT has "Code (Read)" permissions
+- Check that `AZURE_DEVOPS_PAT` environment variable is set correctly
+- Verify the `.env` file exists and contains the correct PAT
+
+**Repository Not Found**
+- Verify the repository name is spelled correctly
+- Ensure you have access to the repository in Azure DevOps
+- Check that the organization and project names are correct
+
+**No Pull Requests Found**
+- Try expanding the date range with `--from` and `--to` flags
+- Use `--status all` to include active and abandoned PRs
+- Check if the repository actually has any PRs in the specified time period
+
+**Network/Connection Issues**
+- Verify internet connectivity
+- Check Azure DevOps service status
+- Ensure your firewall allows HTTPS connections to `*.visualstudio.com`
+
+**Verbose Mode**
+Use the `--verbose` flag for detailed debugging information:
+```bash
+azure-pr-cli list -o myorg -p myproject -r myrepo -v
+```
