@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/CodellaSoftware/azure-pr-cli/internal/config"
+	"github.com/CodellaSoftware/azure-pr-cli/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/yourusername/azure-pr-cli/internal/config"
-	"github.com/yourusername/azure-pr-cli/internal/models"
 )
 
 func TestNewAzureDevOpsClient(t *testing.T) {
@@ -34,21 +34,21 @@ func TestGetPullRequests_Success(t *testing.T) {
 	now := time.Now()
 	testPRs := []models.PullRequest{
 		{
-			ID:          1,
-			Title:       "Test PR 1",
-			Status:      "completed",
+			ID:           1,
+			Title:        "Test PR 1",
+			Status:       "completed",
 			CreationDate: now.Add(-48 * time.Hour),
-			ClosedDate:  now.Add(-24 * time.Hour),
+			ClosedDate:   now.Add(-24 * time.Hour),
 			Repository: models.Repository{
 				Name: "testrepo",
 			},
 		},
 		{
-			ID:          2,
-			Title:       "Test PR 2",
-			Status:      "completed",
+			ID:           2,
+			Title:        "Test PR 2",
+			Status:       "completed",
 			CreationDate: now.Add(-72 * time.Hour),
-			ClosedDate:  now.Add(-12 * time.Hour),
+			ClosedDate:   now.Add(-12 * time.Hour),
 			Repository: models.Repository{
 				Name: "testrepo",
 			},
@@ -72,7 +72,9 @@ func TestGetPullRequests_Success(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			t.Fatalf("Failed to encode response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -102,7 +104,9 @@ func TestGetPullRequests_APIError(t *testing.T) {
 	// Create mock server that returns error
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte("Unauthorized"))
+		if _, err := w.Write([]byte("Unauthorized")); err != nil {
+			t.Fatalf("Failed to write response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -128,7 +132,9 @@ func TestGetPullRequests_InvalidJSON(t *testing.T) {
 	// Create mock server that returns invalid JSON
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("invalid json"))
+		if _, err := w.Write([]byte("invalid json")); err != nil {
+			t.Fatalf("Failed to write response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -162,8 +168,8 @@ func TestBuildURL(t *testing.T) {
 	from := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	tests := []struct {
-		name           string
-		status         string
+		name             string
+		status           string
 		expectedContains []string
 	}{
 		{
@@ -209,32 +215,32 @@ func TestFilterPRs(t *testing.T) {
 
 	prs := []models.PullRequest{
 		{
-			ID:          1,
-			Title:       "Completed PR in range",
-			Status:      "completed",
+			ID:           1,
+			Title:        "Completed PR in range",
+			Status:       "completed",
 			CreationDate: now.Add(-48 * time.Hour),
-			ClosedDate:  now.Add(-24 * time.Hour),
+			ClosedDate:   now.Add(-24 * time.Hour),
 		},
 		{
-			ID:          2,
-			Title:       "Completed PR out of range",
-			Status:      "completed",
+			ID:           2,
+			Title:        "Completed PR out of range",
+			Status:       "completed",
 			CreationDate: now.Add(-168 * time.Hour),
-			ClosedDate:  now.Add(-144 * time.Hour),
+			ClosedDate:   now.Add(-144 * time.Hour),
 		},
 		{
-			ID:          3,
-			Title:       "Active PR in range",
-			Status:      "active",
+			ID:           3,
+			Title:        "Active PR in range",
+			Status:       "active",
 			CreationDate: now.Add(-12 * time.Hour),
-			ClosedDate:  time.Time{},
+			ClosedDate:   time.Time{},
 		},
 		{
-			ID:          4,
-			Title:       "Abandoned PR in range",
-			Status:      "abandoned",
+			ID:           4,
+			Title:        "Abandoned PR in range",
+			Status:       "abandoned",
 			CreationDate: now.Add(-36 * time.Hour),
-			ClosedDate:  now.Add(-30 * time.Hour),
+			ClosedDate:   now.Add(-30 * time.Hour),
 		},
 	}
 
@@ -243,10 +249,10 @@ func TestFilterPRs(t *testing.T) {
 	to := now
 
 	tests := []struct {
-		name           string
-		status         string
-		expectedCount  int
-		expectedIDs    []int
+		name          string
+		status        string
+		expectedCount int
+		expectedIDs   []int
 	}{
 		{
 			name:          "filter completed",

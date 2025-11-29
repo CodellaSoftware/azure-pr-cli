@@ -43,7 +43,7 @@ The XLSX export format provides professional Excel spreadsheets with:
 ### From Source
 
 ```bash
-git clone https://github.com/yourusername/azure-pr-cli.git
+git clone https://github.com/CodellaSoftware/azure-pr-cli.git
 cd azure-pr-cli
 make build
 ```
@@ -51,7 +51,7 @@ make build
 ### Using Go Install
 
 ```bash
-go install github.com/yourusername/azure-pr-cli@latest
+go install github.com/CodellaSoftware/azure-pr-cli@latest
 ```
 
 ## Configuration
@@ -162,7 +162,7 @@ azure-pr-cli version
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/azure-pr-cli.git
+git clone https://github.com/CodellaSoftware/azure-pr-cli.git
 cd azure-pr-cli
 
 # Install dependencies

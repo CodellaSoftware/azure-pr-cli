@@ -1,4 +1,4 @@
-module github.com/yourusername/azure-pr-cli
+module github.com/CodellaSoftware/azure-pr-cli
 
 go 1.24.0
 

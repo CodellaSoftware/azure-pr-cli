@@ -1,7 +1,7 @@
 package formatter
 
 import (
-	"github.com/yourusername/azure-pr-cli/internal/models"
+	"github.com/CodellaSoftware/azure-pr-cli/internal/models"
 )
 
 type Formatter interface {

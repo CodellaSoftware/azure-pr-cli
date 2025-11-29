@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/CodellaSoftware/azure-pr-cli/internal/client"
+	"github.com/CodellaSoftware/azure-pr-cli/internal/config"
+	"github.com/CodellaSoftware/azure-pr-cli/internal/formatter"
 	"github.com/spf13/cobra"
-	"github.com/yourusername/azure-pr-cli/internal/client"
-	"github.com/yourusername/azure-pr-cli/internal/config"
-	"github.com/yourusername/azure-pr-cli/internal/formatter"
 )
 
 var (
@@ -69,7 +69,9 @@ func init() {
 	listCmd.Flags().StringVarP(&organization, "organization", "o", "", "Azure DevOps organization (or set AZURE_DEVOPS_ORG)")
 	listCmd.Flags().StringVarP(&project, "project", "p", "", "Azure DevOps project (or set AZURE_DEVOPS_PROJECT)")
 	listCmd.Flags().StringVarP(&repository, "repository", "r", "", "Repository name (required)")
-	listCmd.MarkFlagRequired("repository")
+	if err := listCmd.MarkFlagRequired("repository"); err != nil {
+		panic(err)
+	}
 
 	// Authentication
 	listCmd.Flags().StringVar(&pat, "pat", "", "Personal Access Token (or set AZURE_DEVOPS_PAT)")

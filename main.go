@@ -3,8 +3,8 @@ package main
 import (
 	"log"
 
+	"github.com/CodellaSoftware/azure-pr-cli/cmd"
 	"github.com/joho/godotenv"
-	"github.com/yourusername/azure-pr-cli/cmd"
 )
 
 func main() {

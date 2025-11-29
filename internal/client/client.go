@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/yourusername/azure-pr-cli/internal/config"
-	"github.com/yourusername/azure-pr-cli/internal/models"
+	"github.com/CodellaSoftware/azure-pr-cli/internal/config"
+	"github.com/CodellaSoftware/azure-pr-cli/internal/models"
 )
 
 const (

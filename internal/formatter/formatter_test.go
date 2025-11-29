@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/CodellaSoftware/azure-pr-cli/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/yourusername/azure-pr-cli/internal/models"
 )
 
 func createTestPRs() []models.PullRequest {

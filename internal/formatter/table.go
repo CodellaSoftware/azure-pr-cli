@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"fmt"
 
+	"github.com/CodellaSoftware/azure-pr-cli/internal/models"
 	"github.com/olekukonko/tablewriter"
-	"github.com/yourusername/azure-pr-cli/internal/models"
 )
 
 type TableFormatter struct{}
