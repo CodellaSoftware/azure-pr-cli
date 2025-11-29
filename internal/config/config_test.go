@@ -10,22 +10,42 @@ import (
 
 func TestLoadConfig(t *testing.T) {
 	tests := []struct {
-		name        string
-		org         string
-		project     string
-		repo        string
-		pat         string
-		envVars     map[string]string
-		expectError bool
-		errorMsg    string
+		name          string
+		org           string
+		project       string
+		repo          string
+		pat           string
+		envVars       map[string]string
+		expectError   bool
+		errorMsg      string
+		expectedRepos []string
 	}{
 		{
-			name:        "all values from flags",
-			org:         "myorg",
-			project:     "myproject",
-			repo:        "myrepo",
-			pat:         "mytoken",
-			expectError: false,
+			name:          "all values from flags - single repo",
+			org:           "myorg",
+			project:       "myproject",
+			repo:          "myrepo",
+			pat:           "mytoken",
+			expectError:   false,
+			expectedRepos: []string{"myrepo"},
+		},
+		{
+			name:          "multiple repositories",
+			org:           "myorg",
+			project:       "myproject",
+			repo:          "repo1,repo2,repo3",
+			pat:           "mytoken",
+			expectError:   false,
+			expectedRepos: []string{"repo1", "repo2", "repo3"},
+		},
+		{
+			name:          "multiple repositories with spaces",
+			org:           "myorg",
+			project:       "myproject",
+			repo:          " repo1 , repo2 , repo3 ",
+			pat:           "mytoken",
+			expectError:   false,
+			expectedRepos: []string{"repo1", "repo2", "repo3"},
 		},
 		{
 			name:    "values from environment variables",
@@ -38,7 +58,8 @@ func TestLoadConfig(t *testing.T) {
 				"AZURE_DEVOPS_PROJECT": "envproject",
 				"AZURE_DEVOPS_PAT":     "envtoken",
 			},
-			expectError: false,
+			expectError:   false,
+			expectedRepos: []string{"myrepo"},
 		},
 		{
 			name:        "missing organization",
@@ -87,7 +108,8 @@ func TestLoadConfig(t *testing.T) {
 				"AZURE_DEVOPS_PROJECT": "envproject",
 				"AZURE_DEVOPS_PAT":     "envtoken",
 			},
-			expectError: false,
+			expectError:   false,
+			expectedRepos: []string{"myrepo"},
 		},
 	}
 
@@ -123,7 +145,7 @@ func TestLoadConfig(t *testing.T) {
 				assert.Equal(t, tt.envVars["AZURE_DEVOPS_PROJECT"], cfg.Project)
 			}
 
-			assert.Equal(t, tt.repo, cfg.Repository)
+			assert.Equal(t, tt.expectedRepos, cfg.Repositories)
 
 			if tt.pat != "" {
 				assert.Equal(t, tt.pat, cfg.PAT)
@@ -146,7 +168,7 @@ func TestConfigValidate(t *testing.T) {
 			config: &Config{
 				Organization: "myorg",
 				Project:      "myproject",
-				Repository:   "myrepo",
+				Repositories: []string{"myrepo"},
 				PAT:          "mytoken",
 			},
 			expectError: false,
@@ -156,7 +178,7 @@ func TestConfigValidate(t *testing.T) {
 			config: &Config{
 				Organization: "",
 				Project:      "myproject",
-				Repository:   "myrepo",
+				Repositories: []string{"myrepo"},
 				PAT:          "mytoken",
 			},
 			expectError: true,
@@ -167,29 +189,29 @@ func TestConfigValidate(t *testing.T) {
 			config: &Config{
 				Organization: "myorg",
 				Project:      "",
-				Repository:   "myrepo",
+				Repositories: []string{"myrepo"},
 				PAT:          "mytoken",
 			},
 			expectError: true,
 			errorMsg:    "project cannot be empty",
 		},
 		{
-			name: "empty repository",
+			name: "empty repositories",
 			config: &Config{
 				Organization: "myorg",
 				Project:      "myproject",
-				Repository:   "",
+				Repositories: []string{},
 				PAT:          "mytoken",
 			},
 			expectError: true,
-			errorMsg:    "repository cannot be empty",
+			errorMsg:    "repositories cannot be empty",
 		},
 		{
 			name: "empty PAT",
 			config: &Config{
 				Organization: "myorg",
 				Project:      "myproject",
-				Repository:   "myrepo",
+				Repositories: []string{"myrepo"},
 				PAT:          "",
 			},
 			expectError: true,

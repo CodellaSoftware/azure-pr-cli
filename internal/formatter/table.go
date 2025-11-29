@@ -22,7 +22,7 @@ func (f *TableFormatter) Format(prs []models.PullRequest, dateFormat string, opt
 	var buf bytes.Buffer
 
 	table := tablewriter.NewWriter(&buf)
-	table.SetHeader([]string{"REPO NAME", "PR NAME", "PR COMPLETION DATE", "PR URL"})
+	table.SetHeader([]string{"#", "REPO NAME", "PR NAME", "PR COMPLETION DATE", "PR URL"})
 	table.SetBorder(true)
 	table.SetRowLine(false)
 	table.SetAutoWrapText(false)
@@ -34,10 +34,11 @@ func (f *TableFormatter) Format(prs []models.PullRequest, dateFormat string, opt
 	table.SetRowSeparator("-")
 	table.SetHeaderLine(true)
 
-	for _, pr := range prs {
+	for i, pr := range prs {
 		completionDate := pr.FormatCompletionDate(dateFormat)
 
 		table.Append([]string{
+			fmt.Sprintf("%d", i+1),
 			pr.Repository.Name,
 			pr.Title,
 			completionDate,

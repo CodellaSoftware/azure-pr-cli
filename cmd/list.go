@@ -33,20 +33,20 @@ var listCmd = &cobra.Command{
 
 By default, this command fetches completed PRs from the current month.
 You can customize the date range and status filters.`,
-	Example: `  # List PRs and save as XLSX (default behavior)
-  azure-pr-cli list -o myorg -p myproject -r myrepo
+	Example: `  # List PRs from multiple repositories and save as XLSX (default behavior)
+  azure-pr-cli list -o myorg -p myproject -r repo1,repo2,repo3
 
-  # List PRs with custom date range
+  # List PRs from a single repository with custom date range
   azure-pr-cli list -o myorg -p myproject -r myrepo --from 2024-01-01 --to 2024-01-31
 
-  # List all PRs (any status)
-  azure-pr-cli list -o myorg -p myproject -r myrepo --status all
+  # List all PRs (any status) from multiple repositories
+  azure-pr-cli list -o myorg -p myproject -r repo1,repo2 --status all
 
   # Output as table to console
   azure-pr-cli list -o myorg -p myproject -r myrepo --format table
 
   # Output as JSON
-  azure-pr-cli list -o myorg -p myproject -r myrepo --format json
+  azure-pr-cli list -o myorg -p myproject -r repo1,repo2 --format json
 
   # Save as CSV file
   azure-pr-cli list -o myorg -p myproject -r myrepo --output-file prs.csv
@@ -68,7 +68,7 @@ func init() {
 	// Required flags
 	listCmd.Flags().StringVarP(&organization, "organization", "o", "", "Azure DevOps organization (or set AZURE_DEVOPS_ORG)")
 	listCmd.Flags().StringVarP(&project, "project", "p", "", "Azure DevOps project (or set AZURE_DEVOPS_PROJECT)")
-	listCmd.Flags().StringVarP(&repository, "repository", "r", "", "Repository name (required)")
+	listCmd.Flags().StringVarP(&repository, "repository", "r", "", "Repository name(s) (comma-separated for multiple repositories)")
 	if err := listCmd.MarkFlagRequired("repository"); err != nil {
 		panic(err)
 	}
@@ -98,7 +98,7 @@ func runList(cmd *cobra.Command, args []string) error {
 	if verbose {
 		fmt.Fprintf(os.Stderr, "Organization: %s\n", cfg.Organization)
 		fmt.Fprintf(os.Stderr, "Project: %s\n", cfg.Project)
-		fmt.Fprintf(os.Stderr, "Repository: %s\n", cfg.Repository)
+		fmt.Fprintf(os.Stderr, "Repositories: %s\n", strings.Join(cfg.Repositories, ", "))
 	}
 
 	// Parse date range

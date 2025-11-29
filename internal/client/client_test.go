@@ -17,7 +17,7 @@ func TestNewAzureDevOpsClient(t *testing.T) {
 	cfg := &config.Config{
 		Organization: "testorg",
 		Project:      "testproject",
-		Repository:   "testrepo",
+		Repositories: []string{"testrepo"},
 		PAT:          "testtoken",
 	}
 
@@ -82,7 +82,7 @@ func TestGetPullRequests_Success(t *testing.T) {
 	cfg := &config.Config{
 		Organization: "testorg",
 		Project:      "testproject",
-		Repository:   "testrepo",
+		Repositories: []string{"testrepo"},
 		PAT:          "testtoken",
 	}
 
@@ -96,8 +96,8 @@ func TestGetPullRequests_Success(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Len(t, prs, 2)
-	assert.Equal(t, "Test PR 1", prs[0].Title)
-	assert.Equal(t, "Test PR 2", prs[1].Title)
+	assert.Equal(t, "Test PR 2", prs[0].Title) // Newer PR first
+	assert.Equal(t, "Test PR 1", prs[1].Title)
 }
 
 func TestGetPullRequests_APIError(t *testing.T) {
@@ -113,7 +113,7 @@ func TestGetPullRequests_APIError(t *testing.T) {
 	cfg := &config.Config{
 		Organization: "testorg",
 		Project:      "testproject",
-		Repository:   "testrepo",
+		Repositories: []string{"testrepo"},
 		PAT:          "invalidtoken",
 	}
 
@@ -141,7 +141,7 @@ func TestGetPullRequests_InvalidJSON(t *testing.T) {
 	cfg := &config.Config{
 		Organization: "testorg",
 		Project:      "testproject",
-		Repository:   "testrepo",
+		Repositories: []string{"testrepo"},
 		PAT:          "testtoken",
 	}
 
@@ -160,7 +160,7 @@ func TestBuildURL(t *testing.T) {
 	cfg := &config.Config{
 		Organization: "testorg",
 		Project:      "testproject",
-		Repository:   "testrepo",
+		Repositories: []string{"testrepo"},
 		PAT:          "testtoken",
 	}
 
@@ -197,7 +197,7 @@ func TestBuildURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			url := client.buildURL(from, tt.status)
+			url := client.buildURL("testrepo", from, tt.status)
 
 			for _, expected := range tt.expectedContains {
 				assert.Contains(t, url, expected)
@@ -291,4 +291,90 @@ func TestFilterPRs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetPullRequests_MultipleRepositories(t *testing.T) {
+	// Create test data for two repositories
+	now := time.Now()
+	testPRsRepo1 := []models.PullRequest{
+		{
+			ID:           1,
+			Title:        "Repo1 PR 1",
+			Status:       "completed",
+			CreationDate: now.Add(-48 * time.Hour),
+			ClosedDate:   now.Add(-24 * time.Hour),
+			Repository: models.Repository{
+				Name: "repo1",
+			},
+		},
+	}
+	testPRsRepo2 := []models.PullRequest{
+		{
+			ID:           2,
+			Title:        "Repo2 PR 1",
+			Status:       "completed",
+			CreationDate: now.Add(-24 * time.Hour),
+			ClosedDate:   now.Add(-12 * time.Hour),
+			Repository: models.Repository{
+				Name: "repo2",
+			},
+		},
+	}
+
+	callCount := 0
+
+	// Create mock server that returns different data for different repositories
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "GET", r.Method)
+		assert.Contains(t, r.URL.Path, "_apis/git/repositories")
+
+		var responsePRs []models.PullRequest
+		if callCount == 0 {
+			// First call should be for repo1
+			assert.Contains(t, r.URL.Path, "/repositories/repo1/")
+			responsePRs = testPRsRepo1
+		} else {
+			// Second call should be for repo2
+			assert.Contains(t, r.URL.Path, "/repositories/repo2/")
+			responsePRs = testPRsRepo2
+		}
+		callCount++
+
+		response := models.PRListResponse{
+			Value: responsePRs,
+			Count: len(responsePRs),
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			t.Fatalf("Failed to encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	// Create client with multiple repositories
+	cfg := &config.Config{
+		Organization: "testorg",
+		Project:      "testproject",
+		Repositories: []string{"repo1", "repo2"},
+		PAT:          "testtoken",
+	}
+
+	client := NewAzureDevOpsClient(cfg)
+	client.SetBaseURL(server.URL)
+
+	from := time.Now().Add(-7 * 24 * time.Hour) // 7 days ago
+	to := time.Now()
+
+	prs, err := client.GetPullRequests(from, to, "completed")
+
+	require.NoError(t, err)
+	assert.Len(t, prs, 2)
+
+	// Should be sorted by repository name first, then by date (newest first)
+	// repo1 comes before repo2 alphabetically
+	assert.Equal(t, "repo1", prs[0].Repository.Name)
+	assert.Equal(t, "Repo1 PR 1", prs[0].Title)
+	assert.Equal(t, "repo2", prs[1].Repository.Name)
+	assert.Equal(t, "Repo2 PR 1", prs[1].Title)
 }

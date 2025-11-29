@@ -22,17 +22,18 @@ func (f *CSVFormatter) Format(prs []models.PullRequest, dateFormat string, optio
 		delimiter = d
 	}
 
-	header := fmt.Sprintf("REPO NAME%sPR NAME%sPR COMPLETION DATE%sPR URL%sPR LINK\n", delimiter, delimiter, delimiter, delimiter)
+	header := fmt.Sprintf("#%sREPO NAME%sPR NAME%sPR COMPLETION DATE%sPR URL%sPR LINK\n", delimiter, delimiter, delimiter, delimiter, delimiter)
 	buf.WriteString(header)
 
-	for _, pr := range prs {
+	for i, pr := range prs {
 		webURL := pr.GetWebURL(options["org"], options["project"])
 		escapedTitle := strings.ReplaceAll(pr.Title, `"`, `""`)
 		escapedRepo := strings.ReplaceAll(pr.Repository.Name, `"`, `""`)
 
 		linkText := fmt.Sprintf("LINK TO PR (#%d)", pr.ID)
 
-		row := fmt.Sprintf(`"%s"%s"%s"%s"%s"%s"%s"%s"%s"`+"\n",
+		row := fmt.Sprintf(`"%d"%s"%s"%s"%s"%s"%s"%s"%s"%s"%s"`+"\n",
+			i+1, delimiter,
 			escapedRepo, delimiter,
 			escapedTitle, delimiter,
 			pr.FormatCompletionDate(dateFormat), delimiter,

@@ -47,6 +47,7 @@ func TestTableFormatter(t *testing.T) {
 	assert.NotEmpty(t, output)
 
 	// Check that output contains expected elements
+	assert.Contains(t, output, "#")
 	assert.Contains(t, output, "REPO NAME")
 	assert.Contains(t, output, "PR NAME")
 	assert.Contains(t, output, "PR COMPLETION DATE")
@@ -77,11 +78,17 @@ func TestJSONFormatter(t *testing.T) {
 	assert.NotEmpty(t, output)
 
 	// Verify it's valid JSON
-	var parsed []models.PullRequest
+	type indexedPR struct {
+		Index int `json:"index"`
+		models.PullRequest
+	}
+	var parsed []indexedPR
 	err = json.Unmarshal([]byte(output), &parsed)
 	require.NoError(t, err)
 	assert.Len(t, parsed, 2)
+	assert.Equal(t, 1, parsed[0].Index)
 	assert.Equal(t, "Add new feature", parsed[0].Title)
+	assert.Equal(t, 2, parsed[1].Index)
 	assert.Equal(t, "Fix bug in login", parsed[1].Title)
 }
 
@@ -115,6 +122,7 @@ func TestCSVFormatter(t *testing.T) {
 	assert.Len(t, lines, 3) // Header + 2 data rows
 
 	// Check header
+	assert.Contains(t, lines[0], "#")
 	assert.Contains(t, lines[0], "REPO NAME")
 	assert.Contains(t, lines[0], "PR NAME")
 	assert.Contains(t, lines[0], "PR COMPLETION DATE")

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/CodellaSoftware/azure-pr-cli/internal/config"
@@ -34,7 +35,41 @@ func NewAzureDevOpsClient(cfg *config.Config) *AzureDevOpsClient {
 }
 
 func (c *AzureDevOpsClient) GetPullRequests(from, to time.Time, status string) ([]models.PullRequest, error) {
-	url := c.buildURL(from, status)
+	var allPRs []models.PullRequest
+
+	for _, repo := range c.config.Repositories {
+		prs, err := c.getPullRequestsForRepository(repo, from, to, status)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch PRs for repository %s: %w", repo, err)
+		}
+		allPRs = append(allPRs, prs...)
+	}
+
+	// Sort by repository name, then by date (newest first)
+	sort.Slice(allPRs, func(i, j int) bool {
+		if allPRs[i].Repository.Name != allPRs[j].Repository.Name {
+			return allPRs[i].Repository.Name < allPRs[j].Repository.Name
+		}
+		// For date comparison, use ClosedDate for completed/abandoned PRs, CreationDate for active
+		var dateI, dateJ time.Time
+		if allPRs[i].Status == "completed" || allPRs[i].Status == "abandoned" {
+			dateI = allPRs[i].ClosedDate
+		} else {
+			dateI = allPRs[i].CreationDate
+		}
+		if allPRs[j].Status == "completed" || allPRs[j].Status == "abandoned" {
+			dateJ = allPRs[j].ClosedDate
+		} else {
+			dateJ = allPRs[j].CreationDate
+		}
+		return dateI.After(dateJ) // Newest first
+	})
+
+	return allPRs, nil
+}
+
+func (c *AzureDevOpsClient) getPullRequestsForRepository(repo string, from, to time.Time, status string) ([]models.PullRequest, error) {
+	url := c.buildURL(repo, from, status)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -69,13 +104,13 @@ func (c *AzureDevOpsClient) GetPullRequests(from, to time.Time, status string) (
 	return filteredPRs, nil
 }
 
-func (c *AzureDevOpsClient) buildURL(from time.Time, status string) string {
+func (c *AzureDevOpsClient) buildURL(repo string, from time.Time, status string) string {
 	url := fmt.Sprintf(
 		"%s/%s/%s/_apis/git/repositories/%s/pullrequests?api-version=%s",
 		c.baseURL,
 		c.config.Organization,
 		c.config.Project,
-		c.config.Repository,
+		repo,
 		apiVersion,
 	)
 
