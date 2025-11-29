@@ -16,8 +16,7 @@ func NewXLSXFormatter() *XLSXFormatter {
 func (f *XLSXFormatter) Format(prs []models.PullRequest, dateFormat string, options map[string]string) ([]byte, error) {
 	file := excelize.NewFile()
 	defer func() {
-		if err := file.Close(); err != nil {
-		}
+		_ = file.Close()
 	}()
 
 	sheetName := "Sheet1"

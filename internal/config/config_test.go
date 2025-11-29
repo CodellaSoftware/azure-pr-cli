@@ -117,8 +117,14 @@ func TestLoadConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set environment variables
 			for key, value := range tt.envVars {
-				os.Setenv(key, value)
-				defer os.Unsetenv(key)
+				if err := os.Setenv(key, value); err != nil {
+					t.Fatalf("failed to set env var %s: %v", key, err)
+				}
+				defer func(k string) {
+					if err := os.Unsetenv(k); err != nil {
+						t.Errorf("failed to unset env var %s: %v", k, err)
+					}
+				}(key)
 			}
 
 			cfg, err := LoadConfig(tt.org, tt.project, tt.repo, tt.pat)
@@ -267,8 +273,14 @@ func TestGetValueOrEnv(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.envValue != "" {
-				os.Setenv(tt.envKey, tt.envValue)
-				defer os.Unsetenv(tt.envKey)
+				if err := os.Setenv(tt.envKey, tt.envValue); err != nil {
+					t.Fatalf("failed to set env var %s: %v", tt.envKey, err)
+				}
+				defer func(k string) {
+					if err := os.Unsetenv(k); err != nil {
+						t.Errorf("failed to unset env var %s: %v", k, err)
+					}
+				}(tt.envKey)
 			}
 
 			result := getValueOrEnv(tt.value, tt.envKey)
