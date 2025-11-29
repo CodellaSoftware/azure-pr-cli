@@ -20,6 +20,9 @@ var (
 	toDate       string
 	status       string
 	outputFormat string
+	saveCSV      string
+	dateFormat   string
+	delimiter    string
 )
 
 var listCmd = &cobra.Command{
@@ -39,7 +42,16 @@ You can customize the date range and status filters.`,
   azure-pr-cli list -o myorg -p myproject -r myrepo --status all
 
   # Output as JSON
-  azure-pr-cli list -o myorg -p myproject -r myrepo --format json`,
+  azure-pr-cli list -o myorg -p myproject -r myrepo --format json
+
+  # Save as CSV file
+  azure-pr-cli list -o myorg -p myproject -r myrepo --save-csv prs.csv
+
+  # Custom date format
+  azure-pr-cli list -o myorg -p myproject -r myrepo --date-format "2006-01-02"
+
+  # CSV with custom delimiter
+  azure-pr-cli list -o myorg -p myproject -r myrepo --format csv --delimiter ","`,
 	RunE: runList,
 }
 
@@ -62,6 +74,9 @@ func init() {
 
 	// Output options
 	listCmd.Flags().StringVarP(&outputFormat, "format", "f", "table", "Output format: table, json, csv")
+	listCmd.Flags().StringVar(&saveCSV, "save-csv", "", "Save output as CSV to specified file (implies --format csv)")
+	listCmd.Flags().StringVar(&dateFormat, "date-format", "02.01.2006", "Date format for completion dates (Go time format)")
+	listCmd.Flags().StringVar(&delimiter, "delimiter", ";", "CSV delimiter character")
 }
 
 func runList(cmd *cobra.Command, args []string) error {
@@ -107,23 +122,52 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	// Format and display output
 	var formatterInstance formatter.Formatter
-	switch outputFormat {
-	case "json":
-		formatterInstance = formatter.NewJSONFormatter()
-	case "csv":
+	var options map[string]string
+
+	switch {
+	case saveCSV != "":
 		formatterInstance = formatter.NewCSVFormatter()
-	case "table":
+		options = map[string]string{
+			"delimiter": delimiter,
+			"org":       cfg.Organization,
+			"project":   cfg.Project,
+		}
+	case outputFormat == "json":
+		formatterInstance = formatter.NewJSONFormatter()
+		options = map[string]string{}
+	case outputFormat == "csv":
+		formatterInstance = formatter.NewCSVFormatter()
+		options = map[string]string{
+			"delimiter": delimiter,
+			"org":       cfg.Organization,
+			"project":   cfg.Project,
+		}
+	case outputFormat == "table":
 		formatterInstance = formatter.NewTableFormatter()
+		options = map[string]string{
+			"org":     cfg.Organization,
+			"project": cfg.Project,
+		}
 	default:
 		return fmt.Errorf("unsupported output format: %s", outputFormat)
 	}
 
-	output, err := formatterInstance.Format(prs)
+	output, err := formatterInstance.Format(prs, dateFormat, options)
 	if err != nil {
 		return fmt.Errorf("formatting error: %w", err)
 	}
 
-	fmt.Println(output)
+	if saveCSV != "" {
+		// Save to file
+		if err := os.WriteFile(saveCSV, []byte(output), 0644); err != nil {
+			return fmt.Errorf("failed to save CSV file: %w", err)
+		}
+		if verbose {
+			fmt.Fprintf(os.Stderr, "CSV saved to %s\n", saveCSV)
+		}
+	} else {
+		fmt.Println(output)
+	}
 
 	return nil
 }

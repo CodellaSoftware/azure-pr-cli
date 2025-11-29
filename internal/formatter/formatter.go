@@ -6,5 +6,5 @@ import (
 
 // Formatter defines the interface for formatting PR output
 type Formatter interface {
-	Format(prs []models.PullRequest) (string, error)
+	Format(prs []models.PullRequest, dateFormat string, options map[string]string) (string, error)
 }

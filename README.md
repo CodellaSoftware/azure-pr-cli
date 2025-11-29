@@ -98,6 +98,15 @@ azure-pr-cli list -o myorg -p myproject -r myrepo --from 2024-01-01 --to 2024-01
 azure-pr-cli list -o myorg -p myproject -r myrepo --format json
 azure-pr-cli list -o myorg -p myproject -r myrepo --format csv
 
+# Save output to CSV file
+azure-pr-cli list -o myorg -p myproject -r myrepo --save-csv prs.csv
+
+# Custom date format (Go time format, default: 02.01.2006)
+azure-pr-cli list -o myorg -p myproject -r myrepo --date-format "2006-01-02"
+
+# CSV with custom delimiter (default: ;)
+azure-pr-cli list -o myorg -p myproject -r myrepo --format csv --delimiter ","
+
 # Filter by PR status
 azure-pr-cli list -o myorg -p myproject -r myrepo --status all  # active, completed, abandoned, all
 

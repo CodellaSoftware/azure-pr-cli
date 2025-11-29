@@ -2,7 +2,8 @@ package formatter
 
 import (
 	"bytes"
-	"encoding/csv"
+	"fmt"
+	"strings"
 
 	"github.com/yourusername/azure-pr-cli/internal/models"
 )
@@ -16,33 +17,37 @@ func NewCSVFormatter() *CSVFormatter {
 }
 
 // Format formats pull requests as CSV
-func (f *CSVFormatter) Format(prs []models.PullRequest) (string, error) {
+func (f *CSVFormatter) Format(prs []models.PullRequest, dateFormat string, options map[string]string) (string, error) {
 	var buf bytes.Buffer
-	writer := csv.NewWriter(&buf)
 
-	// Write header
-	header := []string{"REPO NAME", "PR NAME", "PR COMPLETION DATE", "PR URL"}
-	if err := writer.Write(header); err != nil {
-		return "", err
+	// Get delimiter from options, default to ";"
+	delimiter := ";"
+	if d, ok := options["delimiter"]; ok && d != "" {
+		delimiter = d
 	}
 
-	// Write data
+	// Write header manually to ensure consistent formatting
+	header := fmt.Sprintf("REPO NAME%sPR NAME%sPR COMPLETION DATE%sPR URL%sPR LINK\n", delimiter, delimiter, delimiter, delimiter)
+	buf.WriteString(header)
+
+	// Write data rows manually
 	for _, pr := range prs {
-		record := []string{
-			pr.Repository.Name,
-			pr.Title,
-			pr.FormatCompletionDate(),
-			pr.URL,
-		}
-		if err := writer.Write(record); err != nil {
-			return "", err
-		}
-	}
+		webURL := pr.GetWebURL(options["org"], options["project"])
+		// Escape quotes in title for CSV
+		escapedTitle := strings.ReplaceAll(pr.Title, `"`, `""`)
+		escapedRepo := strings.ReplaceAll(pr.Repository.Name, `"`, `""`)
 
-	writer.Flush()
+		// For the link field, use plain text
+		linkText := fmt.Sprintf("LINK TO PR (#%d)", pr.ID)
 
-	if err := writer.Error(); err != nil {
-		return "", err
+		// Construct CSV row manually with proper quoting
+		row := fmt.Sprintf(`"%s"%s"%s"%s"%s"%s"%s"%s"%s"`+"\n",
+			escapedRepo, delimiter,
+			escapedTitle, delimiter,
+			pr.FormatCompletionDate(dateFormat), delimiter,
+			webURL, delimiter,
+			linkText)
+		buf.WriteString(row)
 	}
 
 	return buf.String(), nil

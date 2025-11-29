@@ -15,8 +15,8 @@ func createTestPRs() []models.PullRequest {
 	now := time.Now()
 	return []models.PullRequest{
 		{
-			ID:    1,
-			Title: "Add new feature",
+			ID:     1,
+			Title:  "Add new feature",
 			Status: "completed",
 			Repository: models.Repository{
 				Name: "test-repo",
@@ -25,8 +25,8 @@ func createTestPRs() []models.PullRequest {
 			URL:        "https://dev.azure.com/org/project/_git/repo/pullrequest/1",
 		},
 		{
-			ID:    2,
-			Title: "Fix bug in login",
+			ID:     2,
+			Title:  "Fix bug in login",
 			Status: "completed",
 			Repository: models.Repository{
 				Name: "test-repo",
@@ -41,11 +41,11 @@ func TestTableFormatter(t *testing.T) {
 	formatter := NewTableFormatter()
 	prs := createTestPRs()
 
-	output, err := formatter.Format(prs)
+	output, err := formatter.Format(prs, "", map[string]string{})
 
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
-	
+
 	// Check that output contains expected elements
 	assert.Contains(t, output, "REPO NAME")
 	assert.Contains(t, output, "PR NAME")
@@ -61,7 +61,7 @@ func TestTableFormatter_EmptyList(t *testing.T) {
 	formatter := NewTableFormatter()
 	prs := []models.PullRequest{}
 
-	output, err := formatter.Format(prs)
+	output, err := formatter.Format(prs, "", map[string]string{})
 
 	require.NoError(t, err)
 	assert.Contains(t, output, "No pull requests found")
@@ -71,7 +71,7 @@ func TestJSONFormatter(t *testing.T) {
 	formatter := NewJSONFormatter()
 	prs := createTestPRs()
 
-	output, err := formatter.Format(prs)
+	output, err := formatter.Format(prs, "", map[string]string{})
 
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
@@ -89,7 +89,7 @@ func TestJSONFormatter_EmptyList(t *testing.T) {
 	formatter := NewJSONFormatter()
 	prs := []models.PullRequest{}
 
-	output, err := formatter.Format(prs)
+	output, err := formatter.Format(prs, "", map[string]string{})
 
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
@@ -105,7 +105,7 @@ func TestCSVFormatter(t *testing.T) {
 	formatter := NewCSVFormatter()
 	prs := createTestPRs()
 
-	output, err := formatter.Format(prs)
+	output, err := formatter.Format(prs, "", map[string]string{})
 
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
@@ -130,7 +130,7 @@ func TestCSVFormatter_EmptyList(t *testing.T) {
 	formatter := NewCSVFormatter()
 	prs := []models.PullRequest{}
 
-	output, err := formatter.Format(prs)
+	output, err := formatter.Format(prs, "", map[string]string{})
 
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
@@ -150,8 +150,8 @@ func TestFormatters_AllImplementInterface(t *testing.T) {
 func TestFormatters_HandleSpecialCharacters(t *testing.T) {
 	prs := []models.PullRequest{
 		{
-			ID:    1,
-			Title: "Fix: Handle \"quotes\" and, commas",
+			ID:     1,
+			Title:  "Fix: Handle \"quotes\" and, commas",
 			Status: "completed",
 			Repository: models.Repository{
 				Name: "test-repo",
@@ -172,7 +172,7 @@ func TestFormatters_HandleSpecialCharacters(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			output, err := tt.formatter.Format(prs)
+			output, err := tt.formatter.Format(prs, "", map[string]string{})
 			require.NoError(t, err)
 			assert.NotEmpty(t, output)
 		})

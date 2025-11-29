@@ -15,7 +15,7 @@ func NewJSONFormatter() *JSONFormatter {
 }
 
 // Format formats pull requests as JSON
-func (f *JSONFormatter) Format(prs []models.PullRequest) (string, error) {
+func (f *JSONFormatter) Format(prs []models.PullRequest, dateFormat string, options map[string]string) (string, error) {
 	output, err := json.MarshalIndent(prs, "", "  ")
 	if err != nil {
 		return "", err

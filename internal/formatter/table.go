@@ -17,7 +17,7 @@ func NewTableFormatter() *TableFormatter {
 }
 
 // Format formats pull requests as a table
-func (f *TableFormatter) Format(prs []models.PullRequest) (string, error) {
+func (f *TableFormatter) Format(prs []models.PullRequest, dateFormat string, options map[string]string) (string, error) {
 	if len(prs) == 0 {
 		return "No pull requests found for the specified criteria.\n", nil
 	}
@@ -38,13 +38,13 @@ func (f *TableFormatter) Format(prs []models.PullRequest) (string, error) {
 	table.SetHeaderLine(true)
 
 	for _, pr := range prs {
-		completionDate := pr.FormatCompletionDate()
-		
+		completionDate := pr.FormatCompletionDate(dateFormat)
+
 		table.Append([]string{
 			pr.Repository.Name,
 			pr.Title,
 			completionDate,
-			pr.URL,
+			pr.GetWebURL(options["org"], options["project"]),
 		})
 	}
 
