@@ -3,16 +3,28 @@
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A professional CLI tool for fetching and displaying Pull Requests from Azure DevOps repositories.
+A professional CLI tool for fetching and displaying Pull Requests from Azure DevOps repositories with Excel export capabilities.
 
 ## Features
 
 - 🔍 Fetch PRs from Azure DevOps repositories
 - 📅 Filter by current month or custom date ranges
-- 📊 Beautiful table output
-- 🔐 Secure authentication via PAT
+- 📊 Multiple output formats: Table, JSON, CSV, XLSX
+- 📈 **Excel XLSX export with clickable hyperlinks**
+- 🔐 Secure authentication via PAT or .env files
 - ✅ Comprehensive test coverage
 - 🏗️ Built with Cobra CLI framework
+- 📁 Automatic format detection from file extensions
+
+## Excel XLSX Features
+
+The XLSX export format provides professional Excel spreadsheets with:
+
+- **Clickable hyperlinks** in the "PR LINK" column that open PRs directly in your browser
+- **Auto-fit columns** for optimal readability
+- **Professional formatting** with headers and data properly organized
+- **Default filename** `pull-requests.xlsx` when no output file is specified
+- **Extension-based format detection** - save as `.xlsx` for automatic XLSX output
 
 ## Table of Contents
 
@@ -75,7 +87,7 @@ The application will automatically load the `.env` file if it exists.
 ### Basic Commands
 
 ```bash
-# List PRs for current month
+# List PRs and save as XLSX (default behavior)
 azure-pr-cli list -o myorg -p myproject -r myrepo
 
 # Using environment variables
@@ -94,15 +106,14 @@ azure-pr-cli list -o myorg -p myproject -r myrepo
 # Custom date range
 azure-pr-cli list -o myorg -p myproject -r myrepo --from 2024-01-01 --to 2024-01-31
 
-# Different output formats
-azure-pr-cli list -o myorg -p myproject -r myrepo --format json
-azure-pr-cli list -o myorg -p myproject -r myrepo --format csv
+# Output formats
+azure-pr-cli list -o myorg -p myproject -r myrepo --format table  # Console table
+azure-pr-cli list -o myorg -p myproject -r myrepo --format json   # JSON output
+azure-pr-cli list -o myorg -p myproject -r myrepo --format csv    # CSV output
 
-# Save output to CSV file
-azure-pr-cli list -o myorg -p myproject -r myrepo --save-csv prs.csv
-
-# Save as Excel XLSX file (with clickable hyperlinks)
-azure-pr-cli list -o myorg -p myproject -r myrepo --save-csv prs.xlsx
+# Save to specific files (format auto-detected from extension)
+azure-pr-cli list -o myorg -p myproject -r myrepo --output-file prs.csv
+azure-pr-cli list -o myorg -p myproject -r myrepo --output-file report.xlsx
 
 # Custom date format (Go time format, default: 02.01.2006)
 azure-pr-cli list -o myorg -p myproject -r myrepo --date-format "2006-01-02"
@@ -116,6 +127,17 @@ azure-pr-cli list -o myorg -p myproject -r myrepo --status all  # active, comple
 # Verbose output
 azure-pr-cli list -o myorg -p myproject -r myrepo -v
 ```
+
+### Output Formats
+
+| Format | Description | Default File | Features |
+|--------|-------------|--------------|----------|
+| **xlsx** | Excel spreadsheet | `pull-requests.xlsx` | Clickable hyperlinks, auto-fit columns |
+| table | Console table | stdout | Human-readable, colored output |
+| json | JSON array | stdout | Machine-readable |
+| csv | CSV file | stdout | Spreadsheet compatible |
+
+**Note**: XLSX format includes clickable hyperlinks in the "PR LINK" column that open directly in your browser.
 
 ### Command Reference
 
@@ -158,7 +180,7 @@ make build
 azure-pr-cli/
 ├── cmd/                    # Command definitions
 │   ├── root.go            # Root command
-│   ├── list.go            # List command
+│   ├── list.go            # List command with XLSX support
 │   └── version.go         # Version command
 ├── internal/              # Private application code
 │   ├── client/           # Azure DevOps API client
@@ -168,9 +190,10 @@ azure-pr-cli/
 │   │   ├── config.go
 │   │   └── config_test.go
 │   ├── formatter/        # Output formatters
-│   │   ├── table.go
-│   │   ├── json.go
-│   │   ├── csv.go
+│   │   ├── table.go      # Table formatter
+│   │   ├── json.go       # JSON formatter
+│   │   ├── csv.go        # CSV formatter
+│   │   ├── xlsx.go       # Excel XLSX formatter with hyperlinks
 │   │   └── formatter_test.go
 │   └── models/           # Data models
 │       └── pullrequest.go
@@ -274,6 +297,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - Built with [Cobra](https://github.com/spf13/cobra)
 - Uses [tablewriter](https://github.com/olekukonko/tablewriter) for beautiful tables
+- Uses [excelize](https://github.com/xuri/excelize) for Excel XLSX generation with hyperlinks
 - Inspired by Azure DevOps CLI
 
 ## Support
@@ -282,12 +306,3 @@ For issues, questions, or contributions, please:
 - Open an issue on GitHub
 - Check existing issues and discussions
 - Review the documentation
-
-## Roadmap
-
-- [ ] Add support for multiple repositories
-- [ ] Export reports to various formats
-- [ ] Interactive mode
-- [ ] PR statistics and analytics
-- [ ] GitHub Actions integration
-- [ ] Docker container support
