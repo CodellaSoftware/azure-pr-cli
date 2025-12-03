@@ -87,21 +87,39 @@ go install github.com/CodellaSoftware/azure-pr-cli@latest
 
 ### Environment Variables
 
-You can set the following environment variables:
+All configuration options can be set via environment variables, allowing you to configure the tool without command-line flags.
+
+| Environment Variable | Flag | Description | Default |
+|---------------------|------|-------------|---------|
+| `AZURE_DEVOPS_PAT` | `--pat` | Personal Access Token | (required) |
+| `AZURE_DEVOPS_ORG` | `-o, --organization` | Azure DevOps organization | (required) |
+| `AZURE_DEVOPS_PROJECT` | `-p, --project` | Azure DevOps project | (required) |
+| `AZURE_DEVOPS_REPOSITORIES` | `-r, --repository` | Repository name(s), comma-separated | (required) |
+| `AZURE_DEVOPS_STATUS` | `--status` | PR status filter | `completed` |
+| `AZURE_DEVOPS_FORMAT` | `-f, --format` | Output format | `xlsx` |
+| `AZURE_DEVOPS_OUTPUT_FILE` | `--output-file` | Output file path | `pull-requests.xlsx` |
+| `AZURE_DEVOPS_DATE_FORMAT` | `--date-format` | Date format (Go format) | `02.01.2006` |
+| `AZURE_DEVOPS_DELIMITER` | `--delimiter` | CSV delimiter | `;` |
+| `AZURE_DEVOPS_COLUMNS` | `--columns` | Columns to display | `index,repo,title,completed,url` |
+
+**Note**: Command-line flags take precedence over environment variables.
+
+Create a `.env` file in the project root for persistent configuration:
 
 ```bash
-export AZURE_DEVOPS_PAT="your-personal-access-token"
-export AZURE_DEVOPS_ORG="your-organization"
-export AZURE_DEVOPS_PROJECT="your-project"
-```
-
-Alternatively, create a `.env` file in the project root with the same variables:
-
-```bash
-# .env
+# .env - Required settings
 AZURE_DEVOPS_PAT=your-personal-access-token
 AZURE_DEVOPS_ORG=your-organization
 AZURE_DEVOPS_PROJECT=your-project
+AZURE_DEVOPS_REPOSITORIES=repo1,repo2,repo3
+
+# Optional - Output settings
+AZURE_DEVOPS_FORMAT=table
+AZURE_DEVOPS_COLUMNS=index,repo,title,author,status,completed,url
+AZURE_DEVOPS_DATE_FORMAT=2006-01-02
+
+# Optional - Filters
+AZURE_DEVOPS_STATUS=completed
 ```
 
 The application will automatically load the `.env` file if it exists.
@@ -196,8 +214,47 @@ azure-pr-cli version
 | `--output-file` | | Save to file (format from extension) | pull-requests.xlsx |
 | `--date-format` | | Date format (Go time format) | 02.01.2006 |
 | `--delimiter` | | CSV delimiter | ; |
+| `--columns` | | Columns to display (see `--list-columns`) | index,repo,title,completed,url |
+| `--list-columns` | | List available columns and exit | |
 | `--pat` | | Personal Access Token | From env/AZURE_DEVOPS_PAT |
 | `--verbose` | `-v` | Enable verbose output for debugging | false |
+
+### Configurable Columns
+
+You can customize which columns are displayed in the output using the `--columns` flag or `AZURE_DEVOPS_COLUMNS` environment variable.
+
+**Available columns:**
+
+| Column | Header | Description |
+|--------|--------|-------------|
+| `index` | # | Row number |
+| `id` | PR ID | Pull request ID |
+| `repo` | REPO NAME | Repository name |
+| `title` | PR NAME | Pull request title |
+| `author` | AUTHOR | PR author display name |
+| `status` | STATUS | PR status (active, completed, abandoned) |
+| `created` | CREATED DATE | Date when PR was created |
+| `completed` | COMPLETION DATE | Date when PR was completed/closed |
+| `source` | SOURCE BRANCH | Source branch name |
+| `target` | TARGET BRANCH | Target branch name |
+| `merge_status` | MERGE STATUS | Merge status (succeeded, conflicts, etc.) |
+| `url` | PR URL | Web URL to the pull request |
+
+**Examples:**
+
+```bash
+# Show author and status columns
+azure-pr-cli list -r myrepo --columns "index,repo,title,author,status,completed,url"
+
+# Minimal output - just index and title
+azure-pr-cli list -r myrepo --columns "index,title"
+
+# Include branch information
+azure-pr-cli list -r myrepo --columns "index,repo,title,source,target,completed"
+
+# List all available columns
+azure-pr-cli list --list-columns
+```
 
 ## Development
 

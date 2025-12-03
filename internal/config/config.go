@@ -11,13 +11,19 @@ type Config struct {
 	Project      string
 	Repositories []string
 	PAT          string
+	Status       string
+	OutputFormat string
+	OutputFile   string
+	DateFormat   string
+	Delimiter    string
+	Columns      string
 }
 
 func LoadConfig(org, project, repo, pat string) (*Config, error) {
+	repoValue := getValueOrEnv(repo, "AZURE_DEVOPS_REPOSITORIES")
 	var repositories []string
-	if repo != "" {
-		// Split comma-separated repositories
-		for _, r := range strings.Split(repo, ",") {
+	if repoValue != "" {
+		for _, r := range strings.Split(repoValue, ",") {
 			r = strings.TrimSpace(r)
 			if r != "" {
 				repositories = append(repositories, r)
@@ -39,7 +45,7 @@ func LoadConfig(org, project, repo, pat string) (*Config, error) {
 		return nil, fmt.Errorf("project is required (use -p flag or AZURE_DEVOPS_PROJECT env var)")
 	}
 	if len(cfg.Repositories) == 0 {
-		return nil, fmt.Errorf("at least one repository is required (use -r flag, comma-separated for multiple)")
+		return nil, fmt.Errorf("at least one repository is required (use -r flag or AZURE_DEVOPS_REPOSITORIES env var)")
 	}
 	if cfg.PAT == "" {
 		return nil, fmt.Errorf("PAT is required (use --pat flag or AZURE_DEVOPS_PAT env var)")
@@ -48,11 +54,25 @@ func LoadConfig(org, project, repo, pat string) (*Config, error) {
 	return cfg, nil
 }
 
+func GetValueOrEnv(value, envKey string) string {
+	return getValueOrEnv(value, envKey)
+}
+
 func getValueOrEnv(value, envKey string) string {
 	if value != "" {
 		return value
 	}
 	return os.Getenv(envKey)
+}
+
+func GetValueOrEnvWithDefault(value, envKey, defaultValue string) string {
+	if value != "" {
+		return value
+	}
+	if envValue := os.Getenv(envKey); envValue != "" {
+		return envValue
+	}
+	return defaultValue
 }
 
 func (c *Config) Validate() error {

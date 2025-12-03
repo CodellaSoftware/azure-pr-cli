@@ -19,10 +19,29 @@ func (f *TableFormatter) Format(prs []models.PullRequest, dateFormat string, opt
 		return "No pull requests found for the specified criteria.\n", nil
 	}
 
+	columnsStr := options["columns"]
+	if columnsStr == "" {
+		columnsStr = DefaultColumns
+	}
+
+	cols, err := ParseColumns(columnsStr)
+	if err != nil {
+		return "", err
+	}
+
+	org := options["org"]
+	project := options["project"]
+
 	var buf bytes.Buffer
 
 	table := tablewriter.NewWriter(&buf)
-	table.SetHeader([]string{"#", "REPO NAME", "PR NAME", "PR COMPLETION DATE", "PR URL"})
+
+	headers := make([]string, len(cols))
+	for i, col := range cols {
+		headers[i] = col.Header
+	}
+	table.SetHeader(headers)
+
 	table.SetBorder(true)
 	table.SetRowLine(false)
 	table.SetAutoWrapText(false)
@@ -35,15 +54,21 @@ func (f *TableFormatter) Format(prs []models.PullRequest, dateFormat string, opt
 	table.SetHeaderLine(true)
 
 	for i, pr := range prs {
-		completionDate := pr.FormatCompletionDate(dateFormat)
-
-		table.Append([]string{
-			fmt.Sprintf("%d", i+1),
-			pr.Repository.Name,
-			pr.Title,
-			completionDate,
-			pr.GetWebURL(options["org"], options["project"]),
-		})
+		row := make([]string, len(cols))
+		for j, col := range cols {
+			if col.ID == "completed" && dateFormat != "" {
+				row[j] = pr.FormatCompletionDate(dateFormat)
+			} else if col.ID == "created" && dateFormat != "" {
+				if pr.CreationDate.IsZero() {
+					row[j] = "N/A"
+				} else {
+					row[j] = pr.CreationDate.Format(dateFormat)
+				}
+			} else {
+				row[j] = col.GetValue(pr, i+1, org, project)
+			}
+		}
+		table.Append(row)
 	}
 
 	table.Render()

@@ -288,3 +288,74 @@ func TestGetValueOrEnv(t *testing.T) {
 		})
 	}
 }
+
+func TestGetValueOrEnvWithDefault(t *testing.T) {
+	tests := []struct {
+		name         string
+		value        string
+		envKey       string
+		envValue     string
+		defaultValue string
+		expected     string
+	}{
+		{
+			name:         "value takes precedence",
+			value:        "flagvalue",
+			envKey:       "TEST_DEFAULT_ENV",
+			envValue:     "envvalue",
+			defaultValue: "default",
+			expected:     "flagvalue",
+		},
+		{
+			name:         "env value when no flag",
+			value:        "",
+			envKey:       "TEST_DEFAULT_ENV",
+			envValue:     "envvalue",
+			defaultValue: "default",
+			expected:     "envvalue",
+		},
+		{
+			name:         "default when no flag or env",
+			value:        "",
+			envKey:       "TEST_DEFAULT_ENV",
+			envValue:     "",
+			defaultValue: "default",
+			expected:     "default",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envValue != "" {
+				if err := os.Setenv(tt.envKey, tt.envValue); err != nil {
+					t.Fatalf("failed to set env var %s: %v", tt.envKey, err)
+				}
+				defer func(k string) {
+					if err := os.Unsetenv(k); err != nil {
+						t.Errorf("failed to unset env var %s: %v", k, err)
+					}
+				}(tt.envKey)
+			}
+
+			result := GetValueOrEnvWithDefault(tt.value, tt.envKey, tt.defaultValue)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestGetValueOrEnv_Exported(t *testing.T) {
+	if err := os.Setenv("TEST_EXPORTED_ENV", "testvalue"); err != nil {
+		t.Fatalf("failed to set env var: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("TEST_EXPORTED_ENV"); err != nil {
+			t.Errorf("failed to unset env var: %v", err)
+		}
+	}()
+
+	result := GetValueOrEnv("", "TEST_EXPORTED_ENV")
+	assert.Equal(t, "testvalue", result)
+
+	result = GetValueOrEnv("flagvalue", "TEST_EXPORTED_ENV")
+	assert.Equal(t, "flagvalue", result)
+}

@@ -50,7 +50,7 @@ func TestTableFormatter(t *testing.T) {
 	assert.Contains(t, output, "#")
 	assert.Contains(t, output, "REPO NAME")
 	assert.Contains(t, output, "PR NAME")
-	assert.Contains(t, output, "PR COMPLETION DATE")
+	assert.Contains(t, output, "COMPLETION DATE")
 	assert.Contains(t, output, "PR URL")
 	assert.Contains(t, output, "test-repo")
 	assert.Contains(t, output, "Add new feature")
@@ -125,7 +125,7 @@ func TestCSVFormatter(t *testing.T) {
 	assert.Contains(t, lines[0], "#")
 	assert.Contains(t, lines[0], "REPO NAME")
 	assert.Contains(t, lines[0], "PR NAME")
-	assert.Contains(t, lines[0], "PR COMPLETION DATE")
+	assert.Contains(t, lines[0], "COMPLETION DATE")
 	assert.Contains(t, lines[0], "PR URL")
 
 	// Check data rows

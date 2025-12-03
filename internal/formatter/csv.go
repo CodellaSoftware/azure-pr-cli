@@ -22,24 +22,44 @@ func (f *CSVFormatter) Format(prs []models.PullRequest, dateFormat string, optio
 		delimiter = d
 	}
 
-	header := fmt.Sprintf("#%sREPO NAME%sPR NAME%sPR COMPLETION DATE%sPR URL%sPR LINK\n", delimiter, delimiter, delimiter, delimiter, delimiter)
-	buf.WriteString(header)
+	columnsStr := options["columns"]
+	if columnsStr == "" {
+		columnsStr = DefaultColumns
+	}
+
+	cols, err := ParseColumns(columnsStr)
+	if err != nil {
+		return "", err
+	}
+
+	org := options["org"]
+	project := options["project"]
+
+	headers := make([]string, len(cols))
+	for i, col := range cols {
+		headers[i] = col.Header
+	}
+	buf.WriteString(strings.Join(headers, delimiter) + "\n")
 
 	for i, pr := range prs {
-		webURL := pr.GetWebURL(options["org"], options["project"])
-		escapedTitle := strings.ReplaceAll(pr.Title, `"`, `""`)
-		escapedRepo := strings.ReplaceAll(pr.Repository.Name, `"`, `""`)
-
-		linkText := fmt.Sprintf("LINK TO PR (#%d)", pr.ID)
-
-		row := fmt.Sprintf(`"%d"%s"%s"%s"%s"%s"%s"%s"%s"%s"%s"`+"\n",
-			i+1, delimiter,
-			escapedRepo, delimiter,
-			escapedTitle, delimiter,
-			pr.FormatCompletionDate(dateFormat), delimiter,
-			webURL, delimiter,
-			linkText)
-		buf.WriteString(row)
+		row := make([]string, len(cols))
+		for j, col := range cols {
+			var value string
+			if col.ID == "completed" && dateFormat != "" {
+				value = pr.FormatCompletionDate(dateFormat)
+			} else if col.ID == "created" && dateFormat != "" {
+				if pr.CreationDate.IsZero() {
+					value = "N/A"
+				} else {
+					value = pr.CreationDate.Format(dateFormat)
+				}
+			} else {
+				value = col.GetValue(pr, i+1, org, project)
+			}
+			escapedValue := strings.ReplaceAll(value, `"`, `""`)
+			row[j] = fmt.Sprintf(`"%s"`, escapedValue)
+		}
+		buf.WriteString(strings.Join(row, delimiter) + "\n")
 	}
 
 	return buf.String(), nil
