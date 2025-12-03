@@ -24,6 +24,8 @@ var (
 	outputFile   string
 	dateFormat   string
 	delimiter    string
+	columns      string
+	listColumns  bool
 )
 
 var listCmd = &cobra.Command{
@@ -58,37 +60,56 @@ You can customize the date range and status filters.`,
   azure-pr-cli list -o myorg -p myproject -r myrepo --date-format "2006-01-02"
 
   # CSV with custom delimiter
-  azure-pr-cli list -o myorg -p myproject -r myrepo --format csv --delimiter ","`,
+  azure-pr-cli list -o myorg -p myproject -r myrepo --format csv --delimiter ","
+
+  # Custom columns
+  azure-pr-cli list -o myorg -p myproject -r myrepo --columns "index,repo,title,author,status,completed,url"
+
+  # List available columns
+  azure-pr-cli list --list-columns`,
 	RunE: runList,
 }
 
 func init() {
 	rootCmd.AddCommand(listCmd)
 
-	// Required flags
-	listCmd.Flags().StringVarP(&organization, "organization", "o", "", "Azure DevOps organization (or set AZURE_DEVOPS_ORG)")
-	listCmd.Flags().StringVarP(&project, "project", "p", "", "Azure DevOps project (or set AZURE_DEVOPS_PROJECT)")
-	listCmd.Flags().StringVarP(&repository, "repository", "r", "", "Repository name(s) (comma-separated for multiple repositories)")
-	if err := listCmd.MarkFlagRequired("repository"); err != nil {
-		panic(err)
-	}
+	// Required flags (can also be set via environment variables)
+	listCmd.Flags().StringVarP(&organization, "organization", "o", "", "Azure DevOps organization (or AZURE_DEVOPS_ORG)")
+	listCmd.Flags().StringVarP(&project, "project", "p", "", "Azure DevOps project (or AZURE_DEVOPS_PROJECT)")
+	listCmd.Flags().StringVarP(&repository, "repository", "r", "", "Repository name(s), comma-separated (or AZURE_DEVOPS_REPOSITORIES)")
 
 	// Authentication
-	listCmd.Flags().StringVar(&pat, "pat", "", "Personal Access Token (or set AZURE_DEVOPS_PAT)")
+	listCmd.Flags().StringVar(&pat, "pat", "", "Personal Access Token (or AZURE_DEVOPS_PAT)")
 
 	// Optional filters
 	listCmd.Flags().StringVar(&fromDate, "from", "", "Start date (YYYY-MM-DD), defaults to start of current month")
 	listCmd.Flags().StringVar(&toDate, "to", "", "End date (YYYY-MM-DD), defaults to end of current month")
-	listCmd.Flags().StringVar(&status, "status", "completed", "PR status filter: active, completed, abandoned, all")
+	listCmd.Flags().StringVar(&status, "status", "", "PR status filter: active, completed, abandoned, all (or AZURE_DEVOPS_STATUS, default: completed)")
 
 	// Output options
-	listCmd.Flags().StringVarP(&outputFormat, "format", "f", "xlsx", "Output format: table, json, csv, xlsx (default: saves to pull-requests.xlsx)")
-	listCmd.Flags().StringVar(&outputFile, "output-file", "", "Save output to specified file (format determined by extension, defaults to xlsx)")
-	listCmd.Flags().StringVar(&dateFormat, "date-format", "02.01.2006", "Date format for completion dates (Go time format)")
-	listCmd.Flags().StringVar(&delimiter, "delimiter", ";", "CSV delimiter character (only used with CSV format)")
+	listCmd.Flags().StringVarP(&outputFormat, "format", "f", "", "Output format: table, json, csv, xlsx (or AZURE_DEVOPS_FORMAT, default: xlsx)")
+	listCmd.Flags().StringVar(&outputFile, "output-file", "", "Save output to file (or AZURE_DEVOPS_OUTPUT_FILE)")
+	listCmd.Flags().StringVar(&dateFormat, "date-format", "", "Date format for completion dates (or AZURE_DEVOPS_DATE_FORMAT, default: 02.01.2006)")
+	listCmd.Flags().StringVar(&delimiter, "delimiter", "", "CSV delimiter character (or AZURE_DEVOPS_DELIMITER, default: ;)")
+	listCmd.Flags().StringVar(&columns, "columns", "", "Columns to display, comma-separated (or AZURE_DEVOPS_COLUMNS, default: index,repo,title,completed,url)")
+	listCmd.Flags().BoolVar(&listColumns, "list-columns", false, "List available columns and exit")
 }
 
 func runList(cmd *cobra.Command, args []string) error {
+	// Handle --list-columns flag
+	if listColumns {
+		fmt.Println(formatter.ListColumns())
+		return nil
+	}
+
+	// Resolve configuration with environment variable fallbacks
+	actualStatus := config.GetValueOrEnvWithDefault(status, "AZURE_DEVOPS_STATUS", "completed")
+	actualFormat := config.GetValueOrEnvWithDefault(outputFormat, "AZURE_DEVOPS_FORMAT", "xlsx")
+	actualOutputFile := config.GetValueOrEnv(outputFile, "AZURE_DEVOPS_OUTPUT_FILE")
+	actualDateFormat := config.GetValueOrEnvWithDefault(dateFormat, "AZURE_DEVOPS_DATE_FORMAT", "02.01.2006")
+	actualDelimiter := config.GetValueOrEnvWithDefault(delimiter, "AZURE_DEVOPS_DELIMITER", ";")
+	actualColumns := config.GetValueOrEnvWithDefault(columns, "AZURE_DEVOPS_COLUMNS", formatter.DefaultColumns)
+
 	// Load configuration
 	cfg, err := config.LoadConfig(organization, project, repository, pat)
 	if err != nil {
@@ -99,6 +120,13 @@ func runList(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Organization: %s\n", cfg.Organization)
 		fmt.Fprintf(os.Stderr, "Project: %s\n", cfg.Project)
 		fmt.Fprintf(os.Stderr, "Repositories: %s\n", strings.Join(cfg.Repositories, ", "))
+		fmt.Fprintf(os.Stderr, "Columns: %s\n", actualColumns)
+	}
+
+	// Validate columns configuration
+	_, err = formatter.ParseColumns(actualColumns)
+	if err != nil {
+		return fmt.Errorf("column configuration error: %w", err)
 	}
 
 	// Parse date range
@@ -109,7 +137,7 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	if verbose {
 		fmt.Fprintf(os.Stderr, "Date range: %s to %s\n", from.Format("2006-01-02"), to.Format("2006-01-02"))
-		fmt.Fprintf(os.Stderr, "Status filter: %s\n", status)
+		fmt.Fprintf(os.Stderr, "Status filter: %s\n", actualStatus)
 	}
 
 	// Create Azure DevOps client
@@ -120,7 +148,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Fetching pull requests...\n")
 	}
 
-	prs, err := azureClient.GetPullRequests(from, to, status)
+	prs, err := azureClient.GetPullRequests(from, to, actualStatus)
 	if err != nil {
 		return fmt.Errorf("failed to fetch pull requests: %w", err)
 	}
@@ -129,25 +157,19 @@ func runList(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Found %d pull requests\n", len(prs))
 	}
 
-	// Determine output format
-	actualFormat := outputFormat
-	if outputFile != "" {
-		// Determine format from file extension
-		if strings.HasSuffix(outputFile, ".xlsx") {
+	// Determine output format from file extension if output file is specified
+	if actualOutputFile != "" {
+		if strings.HasSuffix(actualOutputFile, ".xlsx") {
 			actualFormat = "xlsx"
-		} else if strings.HasSuffix(outputFile, ".csv") {
+		} else if strings.HasSuffix(actualOutputFile, ".csv") {
 			actualFormat = "csv"
-		} else if strings.HasSuffix(outputFile, ".json") {
+		} else if strings.HasSuffix(actualOutputFile, ".json") {
 			actualFormat = "json"
-		} else if outputFormat == "table" {
-			// Default to XLSX for file output when no specific format requested
-			actualFormat = "xlsx"
 		}
-		// If extension doesn't match and format was explicitly set, keep it
 	}
 
 	// Validate delimiter is only used with CSV
-	if delimiter != ";" && actualFormat != "csv" {
+	if actualDelimiter != ";" && actualFormat != "csv" {
 		return fmt.Errorf("--delimiter can only be used with CSV format")
 	}
 
@@ -157,22 +179,22 @@ func runList(cmd *cobra.Command, args []string) error {
 		options := map[string]string{
 			"org":     cfg.Organization,
 			"project": cfg.Project,
+			"columns": actualColumns,
 		}
 
-		xlsxData, err := xlsxFormatter.Format(prs, dateFormat, options)
+		xlsxData, err := xlsxFormatter.Format(prs, actualDateFormat, options)
 		if err != nil {
 			return fmt.Errorf("XLSX formatting error: %w", err)
 		}
 
-		if outputFile != "" {
-			if err := os.WriteFile(outputFile, xlsxData, 0644); err != nil {
+		if actualOutputFile != "" {
+			if err := os.WriteFile(actualOutputFile, xlsxData, 0644); err != nil {
 				return fmt.Errorf("failed to save XLSX file: %w", err)
 			}
 			if verbose {
-				fmt.Fprintf(os.Stderr, "XLSX saved to %s\n", outputFile)
+				fmt.Fprintf(os.Stderr, "XLSX saved to %s\n", actualOutputFile)
 			}
 		} else {
-			// Use default filename for XLSX
 			defaultFile := "pull-requests.xlsx"
 			if err := os.WriteFile(defaultFile, xlsxData, 0644); err != nil {
 				return fmt.Errorf("failed to save XLSX file: %w", err)
@@ -190,36 +212,39 @@ func runList(cmd *cobra.Command, args []string) error {
 	switch actualFormat {
 	case "json":
 		formatterInstance = formatter.NewJSONFormatter()
-		options = map[string]string{}
+		options = map[string]string{
+			"columns": actualColumns,
+		}
 	case "csv":
 		formatterInstance = formatter.NewCSVFormatter()
 		options = map[string]string{
-			"delimiter": delimiter,
+			"delimiter": actualDelimiter,
 			"org":       cfg.Organization,
 			"project":   cfg.Project,
+			"columns":   actualColumns,
 		}
 	case "table":
 		formatterInstance = formatter.NewTableFormatter()
 		options = map[string]string{
 			"org":     cfg.Organization,
 			"project": cfg.Project,
+			"columns": actualColumns,
 		}
 	default:
 		return fmt.Errorf("unsupported output format: %s", actualFormat)
 	}
 
-	output, err := formatterInstance.Format(prs, dateFormat, options)
+	output, err := formatterInstance.Format(prs, actualDateFormat, options)
 	if err != nil {
 		return fmt.Errorf("formatting error: %w", err)
 	}
 
-	if outputFile != "" {
-		// Save to file
-		if err := os.WriteFile(outputFile, []byte(output), 0644); err != nil {
+	if actualOutputFile != "" {
+		if err := os.WriteFile(actualOutputFile, []byte(output), 0644); err != nil {
 			return fmt.Errorf("failed to save file: %w", err)
 		}
 		if verbose {
-			fmt.Fprintf(os.Stderr, "Output saved to %s\n", outputFile)
+			fmt.Fprintf(os.Stderr, "Output saved to %s\n", actualOutputFile)
 		}
 	} else {
 		fmt.Println(output)
