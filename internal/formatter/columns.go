@@ -14,7 +14,7 @@ type Column struct {
 	GetValue    func(pr models.PullRequest, index int, org, project string) string
 }
 
-var DefaultColumns = "index,repo,title,completed,url"
+var DefaultColumns = "index,repo,title,completed,url,link"
 
 var AvailableColumns = map[string]Column{
 	"index": {
@@ -119,11 +119,19 @@ var AvailableColumns = map[string]Column{
 			return pr.GetWebURL(org, project)
 		},
 	},
+	"link": {
+		ID:          "link",
+		Header:      "PR LINK",
+		Description: "Clickable hyperlink (for XLSX)",
+		GetValue: func(pr models.PullRequest, index int, org, project string) string {
+			return fmt.Sprintf("LINK TO PR (#%d)", pr.ID)
+		},
+	},
 }
 
 var ColumnOrder = []string{
 	"index", "id", "repo", "title", "author", "status",
-	"created", "completed", "source", "target", "merge_status", "url",
+	"created", "completed", "source", "target", "merge_status", "url", "link",
 }
 
 func ParseColumns(columnsStr string) ([]Column, error) {

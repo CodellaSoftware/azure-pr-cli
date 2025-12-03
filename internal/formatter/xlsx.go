@@ -68,7 +68,7 @@ func (f *XLSXFormatter) Format(prs []models.PullRequest, dateFormat string, opti
 				return nil, fmt.Errorf("failed to set cell value: %w", err)
 			}
 
-			if col.ID == "url" {
+			if col.ID == "link" {
 				webURL := pr.GetWebURL(org, project)
 				if err := file.SetCellHyperLink(sheetName, cell, webURL, "External"); err != nil {
 					return nil, fmt.Errorf("failed to set hyperlink: %w", err)

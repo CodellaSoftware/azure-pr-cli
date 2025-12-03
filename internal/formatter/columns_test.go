@@ -13,12 +13,13 @@ func TestParseColumns_Default(t *testing.T) {
 	cols, err := ParseColumns("")
 
 	require.NoError(t, err)
-	assert.Len(t, cols, 5)
+	assert.Len(t, cols, 6)
 	assert.Equal(t, "index", cols[0].ID)
 	assert.Equal(t, "repo", cols[1].ID)
 	assert.Equal(t, "title", cols[2].ID)
 	assert.Equal(t, "completed", cols[3].ID)
 	assert.Equal(t, "url", cols[4].ID)
+	assert.Equal(t, "link", cols[5].ID)
 }
 
 func TestParseColumns_CustomColumns(t *testing.T) {
