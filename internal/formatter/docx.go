@@ -7,23 +7,33 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/CodellaSoftware/azure-pr-cli/internal/models"
 )
 
-// DOCXFormatter fills a .docx template by expanding a template table row
-// (containing {{field}} placeholders) once per PR. It follows the same
-// ([]byte, error) pattern as XLSXFormatter.
+type hyperlinkEntry struct {
+	rID string
+	url string
+}
+
+var rIDNumRe = regexp.MustCompile(`Id="rId(\d+)"`)
+
+var hyperlinkRunRe = regexp.MustCompile(
+	`<w:r(?:\s[^>]*)?>` +
+		`(?:<w:rPr>[\s\S]*?</w:rPr>)?` +
+		`<w:t(?:\s[^>]*)?>` +
+		`\{\{(url|link)\}\}` +
+		`</w:t></w:r>`,
+)
+
 type DOCXFormatter struct{}
 
 func NewDOCXFormatter() *DOCXFormatter {
 	return &DOCXFormatter{}
 }
 
-// Format reads the .docx template at options["template"], finds the first
-// table row containing {{...}} placeholders, and replaces it with one row
-// per PR with placeholders substituted by actual PR data.
 func (f *DOCXFormatter) Format(prs []models.PullRequest, dateFormat string, options map[string]string) ([]byte, error) {
 	templatePath := options["template"]
 	if templatePath == "" {
@@ -43,13 +53,6 @@ func (f *DOCXFormatter) Format(prs []models.PullRequest, dateFormat string, opti
 		return nil, fmt.Errorf("failed to open DOCX as ZIP: %w", err)
 	}
 
-	var outBuf bytes.Buffer
-	zipWriter := zip.NewWriter(&outBuf)
-
-	// Build document-level placeholder map from only the date variables.
-	// Internal options (template, org, project) must not leak into docVars
-	// since the global replacement would otherwise corrupt any document text
-	// that happens to contain {{org}} or {{project}}.
 	docVars := make(map[string]string)
 	for _, key := range []string{"dateFrom", "dateTo", "reportCreationDate"} {
 		if v := options[key]; v != "" {
@@ -57,30 +60,70 @@ func (f *DOCXFormatter) Format(prs []models.PullRequest, dateFormat string, opti
 		}
 	}
 
+	maxRID := 0
+	for _, zf := range zipReader.File {
+		if zf.Name == "word/_rels/document.xml.rels" {
+			rc, err := zf.Open()
+			if err == nil {
+				data, _ := io.ReadAll(rc)
+				rc.Close()
+				maxRID = maxExistingRID(string(data))
+			}
+			break
+		}
+	}
+
+	var newDocXML []byte
+	var hyperlinks []hyperlinkEntry
 	foundDocument := false
 	for _, zf := range zipReader.File {
 		if zf.Name == "word/document.xml" {
 			foundDocument = true
-			newXML, err := processDocumentXML(zf, prs, dateFormat, org, project, docVars)
+			newDocXML, hyperlinks, err = processDocumentXML(zf, prs, dateFormat, org, project, docVars, maxRID+1)
 			if err != nil {
 				return nil, err
 			}
-			w, err := zipWriter.Create(zf.Name)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create zip entry: %w", err)
-			}
-			if _, err := w.Write(newXML); err != nil {
-				return nil, fmt.Errorf("failed to write document.xml: %w", err)
-			}
-		} else {
-			if err := copyZipEntry(zipWriter, zf); err != nil {
-				return nil, err
-			}
+			break
 		}
 	}
 
 	if !foundDocument {
 		return nil, fmt.Errorf("word/document.xml not found in template — is this a valid .docx file?")
+	}
+
+	var outBuf bytes.Buffer
+	zipWriter := zip.NewWriter(&outBuf)
+
+	for _, zf := range zipReader.File {
+		switch zf.Name {
+		case "word/document.xml":
+			w, err := zipWriter.Create(zf.Name)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create zip entry: %w", err)
+			}
+			if _, err := w.Write(newDocXML); err != nil {
+				return nil, fmt.Errorf("failed to write document.xml: %w", err)
+			}
+		case "word/_rels/document.xml.rels":
+			rc, err := zf.Open()
+			if err != nil {
+				return nil, fmt.Errorf("failed to open %s: %w", zf.Name, err)
+			}
+			data, _ := io.ReadAll(rc)
+			rc.Close()
+			newRels := addHyperlinksToRels(string(data), hyperlinks)
+			w, err := zipWriter.Create(zf.Name)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create zip entry: %w", err)
+			}
+			if _, err := w.Write([]byte(newRels)); err != nil {
+				return nil, fmt.Errorf("failed to write %s: %w", zf.Name, err)
+			}
+		default:
+			if err := copyZipEntry(zipWriter, zf); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	if err := zipWriter.Close(); err != nil {
@@ -111,36 +154,35 @@ func copyZipEntry(w *zip.Writer, src *zip.File) error {
 	return err
 }
 
-func processDocumentXML(zf *zip.File, prs []models.PullRequest, dateFormat, org, project string, docVars map[string]string) ([]byte, error) {
+func processDocumentXML(zf *zip.File, prs []models.PullRequest, dateFormat, org, project string, docVars map[string]string, rIdBase int) ([]byte, []hyperlinkEntry, error) {
 	rc, err := zf.Open()
 	if err != nil {
-		return nil, fmt.Errorf("failed to open document.xml: %w", err)
+		return nil, nil, fmt.Errorf("failed to open document.xml: %w", err)
 	}
 	defer rc.Close()
 
 	rawXML, err := io.ReadAll(rc)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read document.xml: %w", err)
+		return nil, nil, fmt.Errorf("failed to read document.xml: %w", err)
 	}
 
-	result, err := expandTemplateRows(string(rawXML), prs, dateFormat, org, project)
+	result, hyperlinks, err := expandTemplateRows(string(rawXML), prs, dateFormat, org, project, rIdBase)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	result = replaceDocumentPlaceholders(result, docVars)
 
-	return []byte(result), nil
+	return []byte(result), hyperlinks, nil
 }
 
-// rowSpan holds the character offsets and content of a <w:tr>...</w:tr> block.
 type rowSpan struct {
 	start   int
 	end     int
 	content string
 }
 
-func expandTemplateRows(xmlStr string, prs []models.PullRequest, dateFormat, org, project string) (string, error) {
+func expandTemplateRows(xmlStr string, prs []models.PullRequest, dateFormat, org, project string, rIdBase int) (string, []hyperlinkEntry, error) {
 	rows := extractTableRows(xmlStr)
 
 	templateIdx := -1
@@ -154,16 +196,18 @@ func expandTemplateRows(xmlStr string, prs []models.PullRequest, dateFormat, org
 	}
 
 	if templateIdx == -1 {
-		return "", fmt.Errorf("no template row found in DOCX: no <w:tr> contains a PR placeholder (e.g. {{title}}, {{author}})")
+		return "", nil, fmt.Errorf("no template row found in DOCX: no <w:tr> contains a PR placeholder (e.g. {{title}}, {{author}})")
 	}
 
-	// Ensure all <w:t> elements carry xml:space="preserve" so that spaces
-	// adjacent to replaced placeholders are not trimmed by Word.
 	templateRow := ensurePreserveSpace(rows[templateIdx].content)
 
+	var allHyperlinks []hyperlinkEntry
 	var expandedRows strings.Builder
 	for i, pr := range prs {
-		expanded := applyPlaceholders(templateRow, pr, i+1, dateFormat, org, project)
+		rowWithLinks, prLinks := applyHyperlinkPlaceholders(templateRow, pr, i+1, org, project, rIdBase+len(allHyperlinks))
+		allHyperlinks = append(allHyperlinks, prLinks...)
+
+		expanded := applyPlaceholders(rowWithLinks, pr, i+1, dateFormat, org, project)
 		expandedRows.WriteString(expanded)
 	}
 
@@ -171,13 +215,9 @@ func expandTemplateRows(xmlStr string, prs []models.PullRequest, dateFormat, org
 		expandedRows.String() +
 		xmlStr[rows[templateIdx].end:]
 
-	return result, nil
+	return result, allHyperlinks, nil
 }
 
-// hasPRPlaceholder reports whether trXML contains at least one {{field}}
-// placeholder that maps to a known PR column in AvailableColumns.
-// Document-level variables ({{dateFrom}}, {{dateTo}}, {{reportCreationDate}})
-// are not PR columns and therefore do NOT qualify.
 func hasPRPlaceholder(trXML string) bool {
 	for _, m := range placeholderRe.FindAllStringSubmatch(trXML, -1) {
 		if _, ok := AvailableColumns[m[1]]; ok {
@@ -187,11 +227,97 @@ func hasPRPlaceholder(trXML string) bool {
 	return false
 }
 
-// ensurePreserveSpace adds xml:space="preserve" to any bare <w:t> element
-// (one without existing attributes) so that Word does not strip leading or
-// trailing spaces from text adjacent to substituted placeholders.
 func ensurePreserveSpace(xmlStr string) string {
 	return strings.ReplaceAll(xmlStr, "<w:t>", `<w:t xml:space="preserve">`)
+}
+
+func applyHyperlinkPlaceholders(rowXML string, pr models.PullRequest, index int, org, project string, rIdBase int) (string, []hyperlinkEntry) {
+	var entries []hyperlinkEntry
+
+	result := replaceParagraphs(rowXML, func(pXML string) string {
+		return hyperlinkRunRe.ReplaceAllStringFunc(pXML, func(match string) string {
+			sub := hyperlinkRunRe.FindStringSubmatch(match)
+			if len(sub) < 2 {
+				return match
+			}
+			fieldName := sub[1]
+
+			prURL := AvailableColumns["url"].GetValue(pr, index, org, project)
+
+			var displayText string
+			if fieldName == "link" {
+				displayText = AvailableColumns["link"].GetValue(pr, index, org, project)
+			} else {
+				displayText = prURL
+			}
+
+			rID := fmt.Sprintf("rId%d", rIdBase+len(entries))
+			entries = append(entries, hyperlinkEntry{rID: rID, url: prURL})
+
+			return fmt.Sprintf(
+				`<w:hyperlink r:id="%s" w:history="1"`+
+					` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`+
+					`<w:r>%s`+
+					`<w:t xml:space="preserve">%s</w:t></w:r></w:hyperlink>`,
+				rID,
+				buildHyperlinkRunProps(match),
+				xmlEscape(displayText),
+			)
+		})
+	})
+
+	return result, entries
+}
+
+func buildHyperlinkRunProps(runXML string) string {
+	original := runPropsRe.FindString(runXML)
+	if original == "" {
+		return `<w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>`
+	}
+	inner := original[len("<w:rPr>") : len(original)-len("</w:rPr>")]
+	return `<w:rPr><w:rStyle w:val="Hyperlink"/>` + inner + `</w:rPr>`
+}
+
+func maxExistingRID(relsXML string) int {
+	max := 0
+	for _, m := range rIDNumRe.FindAllStringSubmatch(relsXML, -1) {
+		n, _ := strconv.Atoi(m[1])
+		if n > max {
+			max = n
+		}
+	}
+	return max
+}
+
+func addHyperlinksToRels(relsXML string, hyperlinks []hyperlinkEntry) string {
+	if len(hyperlinks) == 0 {
+		return relsXML
+	}
+
+	const hlType = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
+
+	var entries strings.Builder
+	for _, h := range hyperlinks {
+		fmt.Fprintf(&entries,
+			`<Relationship Id="%s" Type="%s" Target="%s" TargetMode="External"/>`,
+			h.rID, hlType, xmlEscape(h.url),
+		)
+	}
+
+	if strings.Contains(relsXML, "</Relationships>") {
+		return strings.Replace(relsXML, "</Relationships>", entries.String()+"</Relationships>", 1)
+	}
+
+	relStart := strings.Index(relsXML, "<Relationships")
+	if relStart == -1 {
+		return relsXML
+	}
+	closeIdx := strings.Index(relsXML[relStart:], "/>")
+	if closeIdx == -1 {
+		return relsXML
+	}
+	abs := relStart + closeIdx
+	return relsXML[:abs] + ">" + entries.String() + "</Relationships>" + relsXML[abs+2:]
 }
 
 func extractTableRows(xmlStr string) []rowSpan {
@@ -205,7 +331,6 @@ func extractTableRows(xmlStr string) []rowSpan {
 		}
 		absStart := searchFrom + startIdx
 
-		// Make sure it's actually a <w:tr> tag (not <w:trPr> etc.)
 		afterTag := xmlStr[absStart+5:]
 		if len(afterTag) == 0 || (afterTag[0] != '>' && afterTag[0] != ' ') {
 			searchFrom = absStart + 5
@@ -231,11 +356,6 @@ func extractTableRows(xmlStr string) []rowSpan {
 	return spans
 }
 
-// normalizeRuns fixes Word's split-run problem within a <w:tr> block.
-// For any <w:p> where at least one {{placeholder}} is split across multiple
-// <w:r> runs, it merges all runs into one, preserving the first run's <w:rPr>.
-// Paragraphs whose placeholders already sit within a single run are left
-// unchanged so that per-run formatting (bold, italic, etc.) is preserved.
 func normalizeRuns(trXML string) string {
 	return replaceParagraphs(trXML, func(pXML string) string {
 		allText := extractAllText(pXML)
@@ -264,8 +384,6 @@ func normalizeRuns(trXML string) string {
 	})
 }
 
-// hasAnySplitPlaceholder reports whether at least one {{word}} placeholder
-// found in allText is split across multiple <w:t> elements in pXML.
 func hasAnySplitPlaceholder(pXML, allText string) bool {
 	for _, m := range placeholderRe.FindAllString(allText, -1) {
 		if isSplitAcrossRuns(pXML, m) {
@@ -275,8 +393,6 @@ func hasAnySplitPlaceholder(pXML, allText string) bool {
 	return false
 }
 
-// replaceParagraphs finds each <w:p>...</w:p> in xml and calls fn on each,
-// replacing the paragraph with fn's return value.
 func replaceParagraphs(xml string, fn func(string) string) string {
 	var result strings.Builder
 	searchFrom := 0
@@ -289,7 +405,6 @@ func replaceParagraphs(xml string, fn func(string) string) string {
 		}
 		absStart := searchFrom + startIdx
 
-		// Ensure it's <w:p> or <w:p > or <w:p>, not <w:pPr> etc.
 		afterTag := xml[absStart+4:]
 		if len(afterTag) == 0 || (afterTag[0] != '>' && afterTag[0] != ' ') {
 			result.WriteString(xml[searchFrom : absStart+4])
@@ -315,7 +430,6 @@ func replaceParagraphs(xml string, fn func(string) string) string {
 
 var wtTextRe = regexp.MustCompile(`<w:t(?:\s[^>]*)?>([^<]*)</w:t>`)
 
-// extractAllText concatenates the text of all <w:t> elements in the XML.
 func extractAllText(pXML string) string {
 	matches := wtTextRe.FindAllStringSubmatch(pXML, -1)
 	var sb strings.Builder
@@ -328,7 +442,6 @@ func extractAllText(pXML string) string {
 var firstRunRe = regexp.MustCompile(`<w:r[ >]`)
 var runPropsRe = regexp.MustCompile(`<w:rPr>[\s\S]*?</w:rPr>`)
 
-// extractFirstRunProps returns the <w:rPr>...</w:rPr> from the first <w:r> in pXML, or "".
 func extractFirstRunProps(pXML string) string {
 	loc := firstRunRe.FindStringIndex(pXML)
 	if loc == nil {
@@ -348,7 +461,6 @@ func extractFirstRunProps(pXML string) string {
 
 var allRunsRe = regexp.MustCompile(`<w:r[ >][\s\S]*?</w:r>`)
 
-// replaceRuns replaces all <w:r>...</w:r> elements in pXML with newRunXML.
 func replaceRuns(pXML string, newRunXML string) string {
 	locs := allRunsRe.FindAllStringIndex(pXML, -1)
 	if len(locs) == 0 {
@@ -361,31 +473,21 @@ func replaceRuns(pXML string, newRunXML string) string {
 	return pXML[:firstStart] + newRunXML + pXML[lastEnd:]
 }
 
-// isSplitAcrossRuns returns true when no single <w:t> element in pXML
-// contains the complete placeholder text. This detects Word's internal
-// behaviour of splitting user-typed text across multiple XML runs.
 func isSplitAcrossRuns(pXML, placeholder string) bool {
 	matches := wtTextRe.FindAllStringSubmatch(pXML, -1)
 	for _, m := range matches {
 		if strings.Contains(xmlUnescape(m[1]), placeholder) {
-			return false // placeholder is complete inside one run — no merge needed
+			return false
 		}
 	}
 	return true
 }
 
-// replaceDocumentPlaceholders replaces document-level placeholders ({{dateFrom}},
-// {{dateTo}}, {{reportCreationDate}}) throughout the entire document XML.
-//
-// Run normalization (merging split runs) is performed only when a placeholder
-// is confirmed to be split across multiple XML runs. This preserves the
-// individual formatting of runs that happen to sit next to a placeholder.
 func replaceDocumentPlaceholders(xmlStr string, docVars map[string]string) string {
 	if len(docVars) == 0 {
 		return xmlStr
 	}
 
-	// Normalize only paragraphs where a placeholder is split across runs.
 	xmlStr = replaceParagraphs(xmlStr, func(pXML string) string {
 		allText := extractAllText(pXML)
 		needsNormalization := false
@@ -413,9 +515,6 @@ func replaceDocumentPlaceholders(xmlStr string, docVars map[string]string) strin
 		return replaceRuns(pXML, newRun.String())
 	})
 
-	// Global string replacement for each document variable.
-	// Placeholders that were in single runs are handled here directly;
-	// split ones were already merged above.
 	for key, value := range docVars {
 		xmlStr = strings.ReplaceAll(xmlStr, "{{"+key+"}}", xmlEscape(value))
 	}
@@ -425,7 +524,6 @@ func replaceDocumentPlaceholders(xmlStr string, docVars map[string]string) strin
 
 var placeholderRe = regexp.MustCompile(`\{\{(\w+)\}\}`)
 
-// applyPlaceholders replaces {{field}} patterns in templateRowXML with PR data.
 func applyPlaceholders(templateRowXML string, pr models.PullRequest, index int, dateFormat, org, project string) string {
 	return placeholderRe.ReplaceAllStringFunc(templateRowXML, func(match string) string {
 		fieldName := match[2 : len(match)-2]
