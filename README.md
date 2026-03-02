@@ -4,14 +4,15 @@
 [![CI](https://github.com/CodellaSoftware/azure-pr-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/CodellaSoftware/azure-pr-cli/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A professional CLI tool for fetching and displaying Pull Requests from Azure DevOps repositories with Excel export capabilities.
+A professional CLI tool for fetching and displaying Pull Requests from Azure DevOps repositories with Excel and Word export capabilities.
 
 ## Features
 
 - 🔍 Fetch PRs from Azure DevOps repositories
 - 📅 Filter by current month or custom date ranges
-- 📊 Multiple output formats: Table, JSON, CSV, XLSX
+- 📊 Multiple output formats: Table, JSON, CSV, XLSX, DOCX
 - 📈 **Excel XLSX export with clickable hyperlinks**
+- 📝 **Word DOCX export via custom template** with clickable hyperlinks
 - 🔐 Secure authentication via PAT or .env files
 - ✅ Comprehensive test coverage
 - 🏗️ Built with Cobra CLI framework
@@ -27,6 +28,49 @@ The XLSX export format provides professional Excel spreadsheets with:
 - **Professional formatting** with headers and data properly organized
 - **Default filename** `pull-requests.xlsx` when no output file is specified
 - **Extension-based format detection** - save as `.xlsx` for automatic XLSX output
+
+## Word DOCX Template Features
+
+The DOCX export fills a Word document template you provide:
+
+- **Clickable hyperlinks** for `{{url}}` and `{{link}}` placeholders — formatted to match your template's font/style
+- **Document-level placeholders** replaced once at the document level (e.g. report header/footer)
+- **Table row template** — one row in your table acts as the template; it is duplicated once per PR
+- **Default filename** `pull-requests.docx` when no output file is specified
+- **Extension-based format detection** — save as `.docx` to trigger automatic DOCX output
+
+### Creating a DOCX Template
+
+1. Create a `.docx` file in Word with your desired layout
+2. Add a table with one data row containing `{{placeholder}}` markers in each cell
+3. The first table row containing a PR-level placeholder (e.g. `{{title}}`) is used as the template row — it is replaced by one expanded row per PR
+4. Optionally add document-level placeholders anywhere in the document outside the table
+
+**PR-level placeholders** (placed inside the template table row):
+
+| Placeholder | Value |
+|---|---|
+| `{{index}}` | Sequential row number (1-based) |
+| `{{id}}` | Pull request ID |
+| `{{repo}}` | Repository name |
+| `{{title}}` | Pull request title |
+| `{{author}}` | Author display name |
+| `{{status}}` | PR status |
+| `{{created}}` | Creation date |
+| `{{completed}}` | Completion/close date |
+| `{{source}}` | Source branch (refs/heads/ stripped) |
+| `{{target}}` | Target branch (refs/heads/ stripped) |
+| `{{merge_status}}` | Merge status |
+| `{{url}}` | Clickable hyperlink to the PR |
+| `{{link}}` | Clickable hyperlink with display text `LINK TO PR (#N)` |
+
+**Document-level placeholders** (placed anywhere outside the template row, replaced once):
+
+| Placeholder | Value |
+|---|---|
+| `{{dateFrom}}` | Report start date |
+| `{{dateTo}}` | Report end date |
+| `{{reportCreationDate}}` | Last day of the reporting month |
 
 ## Multiple Repository Support
 
@@ -101,6 +145,7 @@ All configuration options can be set via environment variables, allowing you to 
 | `AZURE_DEVOPS_DATE_FORMAT` | `--date-format` | Date format (Go format) | `02.01.2006` |
 | `AZURE_DEVOPS_DELIMITER` | `--delimiter` | CSV delimiter | `;` |
 | `AZURE_DEVOPS_COLUMNS` | `--columns` | Columns to display | `index,repo,title,completed,url` |
+| `AZURE_DEVOPS_TEMPLATE` | `--template` | Path to .docx template file | (required for docx) |
 
 **Note**: Command-line flags take precedence over environment variables.
 
@@ -165,6 +210,14 @@ azure-pr-cli list -o myorg -p myproject -r myrepo --format csv    # CSV output
 azure-pr-cli list -o myorg -p myproject -r repo1,repo2 --output-file prs.csv
 azure-pr-cli list -o myorg -p myproject -r repo1,repo2 --output-file report.xlsx
 
+# DOCX Word report from template
+azure-pr-cli list -o myorg -p myproject -r myrepo --format docx --template template.docx
+# DOCX with custom output file (format auto-detected from .docx extension)
+azure-pr-cli list -o myorg -p myproject -r myrepo --template template.docx --output-file report.docx
+# DOCX via environment variable
+export AZURE_DEVOPS_TEMPLATE="template.docx"
+azure-pr-cli list -o myorg -p myproject -r myrepo --format docx
+
 # Custom date format (Go time format, default: 02.01.2006)
 azure-pr-cli list -o myorg -p myproject -r myrepo --date-format "2006-01-02"
 
@@ -183,11 +236,12 @@ azure-pr-cli list -o myorg -p myproject -r myrepo -v
 | Format | Description | Default File | Features |
 |--------|-------------|--------------|----------|
 | **xlsx** | Excel spreadsheet | `pull-requests.xlsx` | Clickable hyperlinks, auto-fit columns |
+| **docx** | Word document (template-based) | `pull-requests.docx` | Custom layout, clickable hyperlinks, document-level placeholders |
 | table | Console table | stdout | Human-readable, colored output |
 | json | JSON array | stdout | Machine-readable |
 | csv | CSV file | stdout | Spreadsheet compatible |
 
-**Note**: XLSX format includes clickable hyperlinks in the "PR LINK" column that open directly in your browser.
+**Note**: Both XLSX and DOCX formats include clickable hyperlinks that open PRs directly in your browser.
 
 ### Command Reference
 
@@ -210,8 +264,9 @@ azure-pr-cli version
 | `--from` | | Start date (YYYY-MM-DD) | Start of current month |
 | `--to` | | End date (YYYY-MM-DD) | End of current month |
 | `--status` | | PR status: active, completed, abandoned, all | completed |
-| `--format` | `-f` | Output format: table, json, csv, xlsx | xlsx |
+| `--format` | `-f` | Output format: table, json, csv, xlsx, docx | xlsx |
 | `--output-file` | | Save to file (format from extension) | pull-requests.xlsx |
+| `--template` | | Path to .docx template (required for docx format) | From env/AZURE_DEVOPS_TEMPLATE |
 | `--date-format` | | Date format (Go time format) | 02.01.2006 |
 | `--delimiter` | | CSV delimiter | ; |
 | `--columns` | | Columns to display (see `--list-columns`) | index,repo,title,completed,url |
@@ -239,6 +294,7 @@ You can customize which columns are displayed in the output using the `--columns
 | `target` | TARGET BRANCH | Target branch name |
 | `merge_status` | MERGE STATUS | Merge status (succeeded, conflicts, etc.) |
 | `url` | PR URL | Web URL to the pull request |
+| `link` | PR LINK | Clickable hyperlink (for XLSX/DOCX) |
 
 **Examples:**
 
@@ -296,10 +352,12 @@ azure-pr-cli/
 │   │   ├── config.go
 │   │   └── config_test.go
 │   ├── formatter/        # Output formatters
+│   │   ├── columns.go    # Column definitions and parsing
 │   │   ├── table.go      # Table formatter
 │   │   ├── json.go       # JSON formatter
 │   │   ├── csv.go        # CSV formatter
 │   │   ├── xlsx.go       # Excel XLSX formatter with hyperlinks
+│   │   ├── docx.go       # Word DOCX formatter with template support
 │   │   └── formatter_test.go
 │   └── models/           # Data models
 │       └── pullrequest.go
