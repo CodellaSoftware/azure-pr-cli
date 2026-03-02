@@ -26,6 +26,7 @@ var (
 	delimiter    string
 	columns      string
 	listColumns  bool
+	templatePath string
 )
 
 var listCmd = &cobra.Command{
@@ -66,7 +67,13 @@ You can customize the date range and status filters.`,
   azure-pr-cli list -o myorg -p myproject -r myrepo --columns "index,repo,title,author,status,completed,url"
 
   # List available columns
-  azure-pr-cli list --list-columns`,
+  azure-pr-cli list --list-columns
+
+  # Output as DOCX using a template
+  azure-pr-cli list -o myorg -p myproject -r myrepo --format docx --template template.docx
+
+  # Output as DOCX with custom output file
+  azure-pr-cli list -o myorg -p myproject -r myrepo --template template.docx --output-file report.docx`,
 	RunE: runList,
 }
 
@@ -87,12 +94,13 @@ func init() {
 	listCmd.Flags().StringVar(&status, "status", "", "PR status filter: active, completed, abandoned, all (or AZURE_DEVOPS_STATUS, default: completed)")
 
 	// Output options
-	listCmd.Flags().StringVarP(&outputFormat, "format", "f", "", "Output format: table, json, csv, xlsx (or AZURE_DEVOPS_FORMAT, default: xlsx)")
+	listCmd.Flags().StringVarP(&outputFormat, "format", "f", "", "Output format: table, json, csv, xlsx, docx (or AZURE_DEVOPS_FORMAT, default: xlsx)")
 	listCmd.Flags().StringVar(&outputFile, "output-file", "", "Save output to file (or AZURE_DEVOPS_OUTPUT_FILE)")
 	listCmd.Flags().StringVar(&dateFormat, "date-format", "", "Date format for completion dates (or AZURE_DEVOPS_DATE_FORMAT, default: 02.01.2006)")
 	listCmd.Flags().StringVar(&delimiter, "delimiter", "", "CSV delimiter character (or AZURE_DEVOPS_DELIMITER, default: ;)")
 	listCmd.Flags().StringVar(&columns, "columns", "", "Columns to display, comma-separated (or AZURE_DEVOPS_COLUMNS, default: index,repo,title,completed,url)")
 	listCmd.Flags().BoolVar(&listColumns, "list-columns", false, "List available columns and exit")
+	listCmd.Flags().StringVar(&templatePath, "template", "", "Path to .docx template file (required when --format docx, or AZURE_DEVOPS_TEMPLATE)")
 }
 
 func runList(cmd *cobra.Command, args []string) error {
@@ -165,7 +173,18 @@ func runList(cmd *cobra.Command, args []string) error {
 			actualFormat = "csv"
 		} else if strings.HasSuffix(actualOutputFile, ".json") {
 			actualFormat = "json"
+		} else if strings.HasSuffix(actualOutputFile, ".docx") {
+			actualFormat = "docx"
 		}
+	}
+
+	// Validate --template is provided when format is docx
+	if actualFormat == "docx" {
+		actualTemplatePath := config.GetValueOrEnv(templatePath, "AZURE_DEVOPS_TEMPLATE")
+		if actualTemplatePath == "" {
+			return fmt.Errorf("--template flag is required when using --format docx")
+		}
+		templatePath = actualTemplatePath
 	}
 
 	// Validate delimiter is only used with CSV
@@ -203,6 +222,36 @@ func runList(cmd *cobra.Command, args []string) error {
 				fmt.Fprintf(os.Stderr, "XLSX saved to %s\n", defaultFile)
 			}
 		}
+		return nil
+	}
+
+	// Handle DOCX format specially since it reads a template and returns bytes
+	if actualFormat == "docx" {
+		docxFormatter := formatter.NewDOCXFormatter()
+		options := map[string]string{
+			"template": templatePath,
+			"org":      cfg.Organization,
+			"project":  cfg.Project,
+		}
+
+		docxData, err := docxFormatter.Format(prs, actualDateFormat, options)
+		if err != nil {
+			return fmt.Errorf("DOCX formatting error: %w", err)
+		}
+
+		outputTarget := actualOutputFile
+		if outputTarget == "" {
+			outputTarget = "pull-requests.docx"
+		}
+
+		if err := os.WriteFile(outputTarget, docxData, 0644); err != nil {
+			return fmt.Errorf("failed to save DOCX file: %w", err)
+		}
+
+		if verbose {
+			fmt.Fprintf(os.Stderr, "DOCX saved to %s\n", outputTarget)
+		}
+
 		return nil
 	}
 
