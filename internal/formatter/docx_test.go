@@ -36,9 +36,9 @@ func buildMinimalDocx(documentXML string) []byte {
 
 	for name, content := range files {
 		w, _ := zw.Create(name)
-		w.Write([]byte(content))
+		_, _ = w.Write([]byte(content))
 	}
-	zw.Close()
+	_ = zw.Close()
 	return buf.Bytes()
 }
 
@@ -48,7 +48,7 @@ func writeTempDocx(t *testing.T, content []byte) string {
 	require.NoError(t, err)
 	_, err = f.Write(content)
 	require.NoError(t, err)
-	f.Close()
+	require.NoError(t, f.Close())
 	return f.Name()
 }
 
@@ -406,7 +406,7 @@ func TestDOCXFormatter_DocumentVarsOutsideTable(t *testing.T) {
 		if zf.Name == "word/document.xml" {
 			rc, _ := zf.Open()
 			data, _ := io.ReadAll(rc)
-			rc.Close()
+			_ = rc.Close()
 			content := string(data)
 
 			assert.Contains(t, content, "01.02.2026")
@@ -470,7 +470,7 @@ func TestDOCXFormatter_ValidTemplate(t *testing.T) {
 		if zf.Name == "word/document.xml" {
 			rc, _ := zf.Open()
 			data, _ := io.ReadAll(rc)
-			rc.Close()
+			_ = rc.Close()
 			docContent = string(data)
 			break
 		}
@@ -518,7 +518,7 @@ func TestDOCXFormatter_SplitRunTemplate(t *testing.T) {
 		if zf.Name == "word/document.xml" {
 			rc, _ := zf.Open()
 			data, _ := io.ReadAll(rc)
-			rc.Close()
+			_ = rc.Close()
 			assert.Contains(t, string(data), "Split Run PR")
 			assert.NotContains(t, string(data), "{{title}}")
 		}
@@ -542,7 +542,7 @@ func TestDOCXFormatter_XMLSpecialCharsInPRData(t *testing.T) {
 		if zf.Name == "word/document.xml" {
 			rc, _ := zf.Open()
 			data, _ := io.ReadAll(rc)
-			rc.Close()
+			_ = rc.Close()
 			content := string(data)
 			assert.Contains(t, content, `Fix &lt;XSS&gt; &amp; &quot;injection&quot;`)
 			assert.NotContains(t, content, `<XSS>`)
@@ -554,8 +554,8 @@ func TestDOCXFormatter_MissingDocumentXML(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	w, _ := zw.Create("[Content_Types].xml")
-	w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><Types/>`))
-	zw.Close()
+	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><Types/>`))
+	_ = zw.Close()
 
 	path := writeTempDocx(t, buf.Bytes())
 
@@ -707,7 +707,7 @@ func TestDOCXFormatter_HyperlinkInOutput(t *testing.T) {
 	for _, zf := range zr.File {
 		rc, _ := zf.Open()
 		data, _ := io.ReadAll(rc)
-		rc.Close()
+		_ = rc.Close()
 		switch zf.Name {
 		case "word/document.xml":
 			docContent = string(data)
@@ -804,7 +804,7 @@ func TestDOCXFormatter_MultiTable(t *testing.T) {
 		if zf.Name == "word/document.xml" {
 			rc, _ := zf.Open()
 			data, _ := io.ReadAll(rc)
-			rc.Close()
+			_ = rc.Close()
 			content := string(data)
 
 			assert.Contains(t, content, "01.02.2026", "dateFrom must be substituted")

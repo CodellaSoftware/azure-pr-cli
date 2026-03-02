@@ -66,7 +66,7 @@ func (f *DOCXFormatter) Format(prs []models.PullRequest, dateFormat string, opti
 			rc, err := zf.Open()
 			if err == nil {
 				data, _ := io.ReadAll(rc)
-				rc.Close()
+				_ = rc.Close()
 				maxRID = maxExistingRID(string(data))
 			}
 			break
@@ -110,7 +110,7 @@ func (f *DOCXFormatter) Format(prs []models.PullRequest, dateFormat string, opti
 				return nil, fmt.Errorf("failed to open %s: %w", zf.Name, err)
 			}
 			data, _ := io.ReadAll(rc)
-			rc.Close()
+			_ = rc.Close()
 			newRels := addHyperlinksToRels(string(data), hyperlinks)
 			w, err := zipWriter.Create(zf.Name)
 			if err != nil {
@@ -138,7 +138,7 @@ func copyZipEntry(w *zip.Writer, src *zip.File) error {
 	if err != nil {
 		return fmt.Errorf("failed to open zip entry %s: %w", src.Name, err)
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 
 	dst, err := w.Create(src.Name)
 	if err != nil {
@@ -159,7 +159,7 @@ func processDocumentXML(zf *zip.File, prs []models.PullRequest, dateFormat, org,
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to open document.xml: %w", err)
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 
 	rawXML, err := io.ReadAll(rc)
 	if err != nil {
