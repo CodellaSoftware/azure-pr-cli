@@ -41,7 +41,6 @@ func TestParseDateRange_SameDayFromAndTo(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, from.Day(), to.Day())
-	// from is midnight, to is 23:59:59 — to is after from
 	assert.True(t, to.After(from))
 }
 
@@ -69,7 +68,6 @@ func TestParseDateRange_EmptyTo_DefaultsToEndOfMonth(t *testing.T) {
 	assert.Equal(t, 59, to.Minute())
 	assert.Equal(t, 59, to.Second())
 
-	// Must be the last day of the current month
 	expectedLastDay := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, -1).Day()
 	assert.Equal(t, expectedLastDay, to.Day())
 }
@@ -116,7 +114,6 @@ func TestParseDateRange_WrongFormatSlashes(t *testing.T) {
 }
 
 func TestParseDateRange_MonthBoundary(t *testing.T) {
-	// Feb 28 to Mar 1 — valid cross-month range
 	from, to, err := parseDateRange("2024-02-28", "2024-03-01")
 
 	require.NoError(t, err)

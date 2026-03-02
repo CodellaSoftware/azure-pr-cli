@@ -30,7 +30,6 @@ func TestNewAzureDevOpsClient(t *testing.T) {
 }
 
 func TestGetPullRequests_Success(t *testing.T) {
-	// Create test data
 	now := time.Now()
 	testPRs := []models.PullRequest{
 		{
@@ -55,13 +54,11 @@ func TestGetPullRequests_Success(t *testing.T) {
 		},
 	}
 
-	// Create mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "GET", r.Method)
 		assert.Contains(t, r.URL.Path, "_apis/git/repositories")
 		assert.Contains(t, r.URL.Query().Get("api-version"), apiVersion)
 
-		// Check authorization header
 		authHeader := r.Header.Get("Authorization")
 		assert.NotEmpty(t, authHeader)
 		assert.Contains(t, authHeader, "Basic")
@@ -78,7 +75,6 @@ func TestGetPullRequests_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Create client with test configuration
 	cfg := &config.Config{
 		Organization: "testorg",
 		Project:      "testproject",
@@ -89,19 +85,17 @@ func TestGetPullRequests_Success(t *testing.T) {
 	client := NewAzureDevOpsClient(cfg)
 	client.SetBaseURL(server.URL)
 
-	// Execute test
-	from := now.Add(-168 * time.Hour) // 7 days ago
+	from := now.Add(-168 * time.Hour)
 	to := now
 	prs, err := client.GetPullRequests(from, to, "completed")
 
 	require.NoError(t, err)
 	assert.Len(t, prs, 2)
-	assert.Equal(t, "Test PR 2", prs[0].Title) // Newer PR first
+	assert.Equal(t, "Test PR 2", prs[0].Title)
 	assert.Equal(t, "Test PR 1", prs[1].Title)
 }
 
 func TestGetPullRequests_APIError(t *testing.T) {
-	// Create mock server that returns error
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		if _, err := w.Write([]byte("Unauthorized")); err != nil {
@@ -129,7 +123,6 @@ func TestGetPullRequests_APIError(t *testing.T) {
 }
 
 func TestGetPullRequests_InvalidJSON(t *testing.T) {
-	// Create mock server that returns invalid JSON
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if _, err := w.Write([]byte("invalid json")); err != nil {
@@ -294,7 +287,6 @@ func TestFilterPRs(t *testing.T) {
 }
 
 func TestGetPullRequests_MultipleRepositories(t *testing.T) {
-	// Create test data for two repositories
 	now := time.Now()
 	testPRsRepo1 := []models.PullRequest{
 		{
@@ -323,18 +315,15 @@ func TestGetPullRequests_MultipleRepositories(t *testing.T) {
 
 	callCount := 0
 
-	// Create mock server that returns different data for different repositories
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "GET", r.Method)
 		assert.Contains(t, r.URL.Path, "_apis/git/repositories")
 
 		var responsePRs []models.PullRequest
 		if callCount == 0 {
-			// First call should be for repo1
 			assert.Contains(t, r.URL.Path, "/repositories/repo1/")
 			responsePRs = testPRsRepo1
 		} else {
-			// Second call should be for repo2
 			assert.Contains(t, r.URL.Path, "/repositories/repo2/")
 			responsePRs = testPRsRepo2
 		}
@@ -352,7 +341,6 @@ func TestGetPullRequests_MultipleRepositories(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Create client with multiple repositories
 	cfg := &config.Config{
 		Organization: "testorg",
 		Project:      "testproject",
@@ -363,7 +351,7 @@ func TestGetPullRequests_MultipleRepositories(t *testing.T) {
 	client := NewAzureDevOpsClient(cfg)
 	client.SetBaseURL(server.URL)
 
-	from := time.Now().Add(-7 * 24 * time.Hour) // 7 days ago
+	from := time.Now().Add(-7 * 24 * time.Hour)
 	to := time.Now()
 
 	prs, err := client.GetPullRequests(from, to, "completed")
@@ -371,8 +359,6 @@ func TestGetPullRequests_MultipleRepositories(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, prs, 2)
 
-	// Should be sorted by repository name first, then by date (newest first)
-	// repo1 comes before repo2 alphabetically
 	assert.Equal(t, "repo1", prs[0].Repository.Name)
 	assert.Equal(t, "Repo1 PR 1", prs[0].Title)
 	assert.Equal(t, "repo2", prs[1].Repository.Name)
@@ -380,7 +366,6 @@ func TestGetPullRequests_MultipleRepositories(t *testing.T) {
 }
 
 func TestGetPullRequests_MultipleRepositories_Error(t *testing.T) {
-	// Create test data for two repositories
 	testPRsRepo1 := []models.PullRequest{
 		{
 			ID:           1,
@@ -396,10 +381,8 @@ func TestGetPullRequests_MultipleRepositories_Error(t *testing.T) {
 
 	callCount := 0
 
-	// Create mock server that returns error for second repository
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if callCount == 0 {
-			// First call succeeds
 			assert.Contains(t, r.URL.Path, "/repositories/repo1/")
 			callCount++
 
@@ -413,7 +396,6 @@ func TestGetPullRequests_MultipleRepositories_Error(t *testing.T) {
 				t.Fatalf("Failed to encode response: %v", err)
 			}
 		} else {
-			// Second call fails
 			assert.Contains(t, r.URL.Path, "/repositories/repo2/")
 			w.WriteHeader(http.StatusUnauthorized)
 			if _, err := w.Write([]byte("Unauthorized")); err != nil {
@@ -423,7 +405,6 @@ func TestGetPullRequests_MultipleRepositories_Error(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Create client with multiple repositories
 	cfg := &config.Config{
 		Organization: "testorg",
 		Project:      "testproject",
@@ -457,7 +438,6 @@ func TestSetHTTPClient(t *testing.T) {
 	customClient := &http.Client{Timeout: 60 * time.Second}
 	client.SetHTTPClient(customClient)
 
-	// We can't directly test the internal httpClient field, but we can verify the method exists
 	assert.NotNil(t, client)
 }
 
@@ -474,7 +454,6 @@ func TestSetBaseURL(t *testing.T) {
 	customURL := "https://custom.dev.azure.com"
 	client.SetBaseURL(customURL)
 
-	// We can't directly test the internal baseURL field, but we can verify the method exists
 	assert.NotNil(t, client)
 }
 
