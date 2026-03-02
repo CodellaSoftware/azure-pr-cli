@@ -155,23 +155,24 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 
 	if actualOutputFile != "" {
-		if strings.HasSuffix(actualOutputFile, ".xlsx") {
+		lowered := strings.ToLower(strings.TrimSpace(actualOutputFile))
+		if strings.HasSuffix(lowered, ".xlsx") {
 			actualFormat = "xlsx"
-		} else if strings.HasSuffix(actualOutputFile, ".csv") {
+		} else if strings.HasSuffix(lowered, ".csv") {
 			actualFormat = "csv"
-		} else if strings.HasSuffix(actualOutputFile, ".json") {
+		} else if strings.HasSuffix(lowered, ".json") {
 			actualFormat = "json"
-		} else if strings.HasSuffix(actualOutputFile, ".docx") {
+		} else if strings.HasSuffix(lowered, ".docx") {
 			actualFormat = "docx"
 		}
 	}
 
+	resolvedTemplatePath := ""
 	if actualFormat == "docx" {
-		actualTemplatePath := config.GetValueOrEnv(templatePath, "AZURE_DEVOPS_TEMPLATE")
-		if actualTemplatePath == "" {
+		resolvedTemplatePath = config.GetValueOrEnv(templatePath, "AZURE_DEVOPS_TEMPLATE")
+		if resolvedTemplatePath == "" {
 			return fmt.Errorf("--template flag is required when using --format docx")
 		}
-		templatePath = actualTemplatePath
 	}
 
 	if actualDelimiter != ";" && actualFormat != "csv" {
@@ -211,15 +212,14 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 
 	if actualFormat == "docx" {
-		lastDayOfMonth := time.Date(to.Year(), to.Month()+1, 0, 0, 0, 0, 0, time.UTC)
 		docxFormatter := formatter.NewDOCXFormatter()
 		options := map[string]string{
-			"template":           templatePath,
+			"template":           resolvedTemplatePath,
 			"org":                cfg.Organization,
 			"project":            cfg.Project,
 			"dateFrom":           from.Format(actualDateFormat),
 			"dateTo":             to.Format(actualDateFormat),
-			"reportCreationDate": lastDayOfMonth.Format(actualDateFormat),
+			"reportCreationDate": time.Now().UTC().Format(actualDateFormat),
 		}
 
 		docxData, err := docxFormatter.Format(prs, actualDateFormat, options)

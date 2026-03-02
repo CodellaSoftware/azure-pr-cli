@@ -65,9 +65,11 @@ func (f *DOCXFormatter) Format(prs []models.PullRequest, dateFormat string, opti
 		if zf.Name == "word/_rels/document.xml.rels" {
 			rc, err := zf.Open()
 			if err == nil {
-				data, _ := io.ReadAll(rc)
+				data, readErr := io.ReadAll(rc)
 				_ = rc.Close()
-				maxRID = maxExistingRID(string(data))
+				if readErr == nil {
+					maxRID = maxExistingRID(string(data))
+				}
 			}
 			break
 		}
@@ -109,8 +111,11 @@ func (f *DOCXFormatter) Format(prs []models.PullRequest, dateFormat string, opti
 			if err != nil {
 				return nil, fmt.Errorf("failed to open %s: %w", zf.Name, err)
 			}
-			data, _ := io.ReadAll(rc)
+			data, err := io.ReadAll(rc)
 			_ = rc.Close()
+			if err != nil {
+				return nil, fmt.Errorf("failed to read %s: %w", zf.Name, err)
+			}
 			newRels := addHyperlinksToRels(string(data), hyperlinks)
 			w, err := zipWriter.Create(zf.Name)
 			if err != nil {

@@ -14,7 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func buildMinimalDocx(documentXML string) []byte {
+func buildMinimalDocx(t *testing.T, documentXML string) []byte {
+	t.Helper()
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 
@@ -35,10 +36,12 @@ func buildMinimalDocx(documentXML string) []byte {
 	}
 
 	for name, content := range files {
-		w, _ := zw.Create(name)
-		_, _ = w.Write([]byte(content))
+		w, err := zw.Create(name)
+		require.NoError(t, err, "failed to create zip entry %s", name)
+		_, err = w.Write([]byte(content))
+		require.NoError(t, err, "failed to write zip entry %s", name)
 	}
-	_ = zw.Close()
+	require.NoError(t, zw.Close(), "failed to close zip writer")
 	return buf.Bytes()
 }
 
@@ -387,7 +390,7 @@ func TestDOCXFormatter_DocumentVarsOutsideTable(t *testing.T) {
 		`</w:tbl>` +
 		`<w:p><w:r><w:t>Created: {{reportCreationDate}}</w:t></w:r></w:p>` +
 		`</w:body></w:document>`
-	path := writeTempDocx(t, buildMinimalDocx(docXML))
+	path := writeTempDocx(t, buildMinimalDocx(t, docXML))
 
 	f := NewDOCXFormatter()
 	prs := []models.PullRequest{{ID: 1, Title: "My PR"}}
@@ -448,7 +451,7 @@ func TestDOCXFormatter_ValidTemplate(t *testing.T) {
 		`<w:tr><w:tc><w:p><w:r><w:t>{{title}}</w:t></w:r></w:p></w:tc>` +
 			`<w:tc><w:p><w:r><w:t>{{author}}</w:t></w:r></w:p></w:tc></w:tr>`,
 	)
-	path := writeTempDocx(t, buildMinimalDocx(docXML))
+	path := writeTempDocx(t, buildMinimalDocx(t, docXML))
 
 	f := NewDOCXFormatter()
 	output, err := f.Format(createTestPRs(), "02.01.2006", map[string]string{
@@ -487,7 +490,7 @@ func TestDOCXFormatter_EmptyPRList(t *testing.T) {
 	docXML := simpleDocumentXML(
 		`<w:tr><w:tc><w:p><w:r><w:t>{{title}}</w:t></w:r></w:p></w:tc></w:tr>`,
 	)
-	path := writeTempDocx(t, buildMinimalDocx(docXML))
+	path := writeTempDocx(t, buildMinimalDocx(t, docXML))
 
 	f := NewDOCXFormatter()
 	output, err := f.Format([]models.PullRequest{}, "", map[string]string{"template": path})
@@ -503,7 +506,7 @@ func TestDOCXFormatter_SplitRunTemplate(t *testing.T) {
 			`<w:r><w:t>tle}}</w:t></w:r>` +
 			`</w:p></w:tc></w:tr>`,
 	)
-	path := writeTempDocx(t, buildMinimalDocx(docXML))
+	path := writeTempDocx(t, buildMinimalDocx(t, docXML))
 
 	f := NewDOCXFormatter()
 	prs := []models.PullRequest{{ID: 1, Title: "Split Run PR"}}
@@ -529,7 +532,7 @@ func TestDOCXFormatter_XMLSpecialCharsInPRData(t *testing.T) {
 	docXML := simpleDocumentXML(
 		`<w:tr><w:tc><w:p><w:r><w:t>{{title}}</w:t></w:r></w:p></w:tc></w:tr>`,
 	)
-	path := writeTempDocx(t, buildMinimalDocx(docXML))
+	path := writeTempDocx(t, buildMinimalDocx(t, docXML))
 
 	f := NewDOCXFormatter()
 	prs := []models.PullRequest{{ID: 1, Title: `Fix <XSS> & "injection"`}}
@@ -570,7 +573,7 @@ func TestDOCXFormatter_NonDocumentFilesPreserved(t *testing.T) {
 	docXML := simpleDocumentXML(
 		`<w:tr><w:tc><w:p><w:r><w:t>{{title}}</w:t></w:r></w:p></w:tc></w:tr>`,
 	)
-	path := writeTempDocx(t, buildMinimalDocx(docXML))
+	path := writeTempDocx(t, buildMinimalDocx(t, docXML))
 
 	f := NewDOCXFormatter()
 	output, err := f.Format(createTestPRs(), "", map[string]string{"template": path})
@@ -686,7 +689,7 @@ func TestDOCXFormatter_HyperlinkInOutput(t *testing.T) {
 			`<w:tc><w:p><w:r><w:t xml:space="preserve">{{url}}</w:t></w:r></w:p></w:tc>` +
 			`</w:tr>`,
 	)
-	path := writeTempDocx(t, buildMinimalDocx(docXML))
+	path := writeTempDocx(t, buildMinimalDocx(t, docXML))
 
 	f := NewDOCXFormatter()
 	prs := []models.PullRequest{
@@ -786,7 +789,7 @@ func TestDOCXFormatter_MultiTable(t *testing.T) {
 		`</w:tbl>` +
 		`</w:body></w:document>`
 
-	path := writeTempDocx(t, buildMinimalDocx(docXML))
+	path := writeTempDocx(t, buildMinimalDocx(t, docXML))
 	f := NewDOCXFormatter()
 	prs := []models.PullRequest{{ID: 1, Title: "Feature A"}}
 
