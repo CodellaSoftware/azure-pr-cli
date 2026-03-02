@@ -46,7 +46,6 @@ func TestTableFormatter(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
 
-	// Check that output contains expected elements
 	assert.Contains(t, output, "#")
 	assert.Contains(t, output, "REPO NAME")
 	assert.Contains(t, output, "PR NAME")
@@ -77,7 +76,6 @@ func TestJSONFormatter(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
 
-	// Verify it's valid JSON
 	type indexedPR struct {
 		Index int `json:"index"`
 		models.PullRequest
@@ -101,7 +99,6 @@ func TestJSONFormatter_EmptyList(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
 
-	// Should be valid JSON representing an empty array
 	var parsed []models.PullRequest
 	err = json.Unmarshal([]byte(output), &parsed)
 	require.NoError(t, err)
@@ -117,18 +114,15 @@ func TestCSVFormatter(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
 
-	// Check CSV structure
 	lines := strings.Split(strings.TrimSpace(output), "\n")
-	assert.Len(t, lines, 3) // Header + 2 data rows
+	assert.Len(t, lines, 3)
 
-	// Check header
 	assert.Contains(t, lines[0], "#")
 	assert.Contains(t, lines[0], "REPO NAME")
 	assert.Contains(t, lines[0], "PR NAME")
 	assert.Contains(t, lines[0], "COMPLETION DATE")
 	assert.Contains(t, lines[0], "PR URL")
 
-	// Check data rows
 	assert.Contains(t, lines[1], "test-repo")
 	assert.Contains(t, lines[1], "Add new feature")
 	assert.Contains(t, lines[2], "Fix bug in login")
@@ -143,7 +137,6 @@ func TestCSVFormatter_EmptyList(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
 
-	// Should only have header
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 	assert.Len(t, lines, 1)
 	assert.Contains(t, lines[0], "REPO NAME")
@@ -153,7 +146,6 @@ func TestFormatters_AllImplementInterface(t *testing.T) {
 	var _ Formatter = &TableFormatter{}
 	var _ Formatter = &JSONFormatter{}
 	var _ Formatter = &CSVFormatter{}
-	// XLSXFormatter implements a different interface (returns []byte)
 }
 
 func TestXLSXFormatter(t *testing.T) {
@@ -166,7 +158,6 @@ func TestXLSXFormatter(t *testing.T) {
 	assert.NotEmpty(t, output)
 	assert.True(t, len(output) > 0, "XLSX output should not be empty")
 
-	// Basic check that it looks like XLSX (starts with PK for ZIP-based format)
 	assert.Equal(t, "PK", string(output[:2]), "XLSX should be a ZIP file starting with PK")
 }
 
@@ -197,7 +188,6 @@ func TestXLSXFormatter_MissingOptions(t *testing.T) {
 	formatter := NewXLSXFormatter()
 	prs := createTestPRs()
 
-	// Test with missing org/project - should still work but URLs might be malformed
 	output, err := formatter.Format(prs, "", map[string]string{})
 
 	require.NoError(t, err)
@@ -208,7 +198,6 @@ func TestXLSXFormatter_MissingOptions(t *testing.T) {
 func TestXLSXFormatter_LongContent(t *testing.T) {
 	formatter := NewXLSXFormatter()
 
-	// Create PR with very long title and description
 	longTitle := strings.Repeat("Very long title with special characters: áéíóú ñ & < > \" quotes ", 10)
 	prs := []models.PullRequest{
 		{
@@ -259,9 +248,8 @@ func TestCSVFormatter_WithCustomDelimiter(t *testing.T) {
 	assert.NotEmpty(t, output)
 
 	lines := strings.Split(strings.TrimSpace(output), "\n")
-	assert.Len(t, lines, 3) // Header + 2 data rows
+	assert.Len(t, lines, 3)
 
-	// Check that comma delimiter is used
 	assert.Contains(t, lines[0], "#,REPO NAME,PR NAME")
 	assert.Contains(t, lines[1], "test-repo")
 }
@@ -270,16 +258,14 @@ func TestCSVFormatter_EmptyDelimiter(t *testing.T) {
 	formatter := NewCSVFormatter()
 	prs := createTestPRs()
 
-	// Empty delimiter should default to semicolon
 	output, err := formatter.Format(prs, "", map[string]string{"delimiter": ""})
 
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
 
 	lines := strings.Split(strings.TrimSpace(output), "\n")
-	assert.Len(t, lines, 3) // Header + 2 data rows
+	assert.Len(t, lines, 3)
 
-	// Check that semicolon delimiter is used (default)
 	assert.Contains(t, lines[0], "#;REPO NAME;PR NAME")
 }
 
@@ -314,7 +300,6 @@ func TestFormatters_HandleSpecialCharacters(t *testing.T) {
 		})
 	}
 
-	// Test XLSX separately since it has different return type
 	xlsxFormatter := NewXLSXFormatter()
 	xlsxOutput, err := xlsxFormatter.Format(prs, "", map[string]string{"org": "testorg", "project": "testproject"})
 	require.NoError(t, err)

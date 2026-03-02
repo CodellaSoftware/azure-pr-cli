@@ -26,6 +26,7 @@ var (
 	delimiter    string
 	columns      string
 	listColumns  bool
+	templatePath string
 )
 
 var listCmd = &cobra.Command{
@@ -66,43 +67,44 @@ You can customize the date range and status filters.`,
   azure-pr-cli list -o myorg -p myproject -r myrepo --columns "index,repo,title,author,status,completed,url"
 
   # List available columns
-  azure-pr-cli list --list-columns`,
+  azure-pr-cli list --list-columns
+
+  # Output as DOCX using a template
+  azure-pr-cli list -o myorg -p myproject -r myrepo --format docx --template template.docx
+
+  # Output as DOCX with custom output file
+  azure-pr-cli list -o myorg -p myproject -r myrepo --template template.docx --output-file report.docx`,
 	RunE: runList,
 }
 
 func init() {
 	rootCmd.AddCommand(listCmd)
 
-	// Required flags (can also be set via environment variables)
 	listCmd.Flags().StringVarP(&organization, "organization", "o", "", "Azure DevOps organization (or AZURE_DEVOPS_ORG)")
 	listCmd.Flags().StringVarP(&project, "project", "p", "", "Azure DevOps project (or AZURE_DEVOPS_PROJECT)")
 	listCmd.Flags().StringVarP(&repository, "repository", "r", "", "Repository name(s), comma-separated (or AZURE_DEVOPS_REPOSITORIES)")
 
-	// Authentication
 	listCmd.Flags().StringVar(&pat, "pat", "", "Personal Access Token (or AZURE_DEVOPS_PAT)")
 
-	// Optional filters
 	listCmd.Flags().StringVar(&fromDate, "from", "", "Start date (YYYY-MM-DD), defaults to start of current month")
 	listCmd.Flags().StringVar(&toDate, "to", "", "End date (YYYY-MM-DD), defaults to end of current month")
 	listCmd.Flags().StringVar(&status, "status", "", "PR status filter: active, completed, abandoned, all (or AZURE_DEVOPS_STATUS, default: completed)")
 
-	// Output options
-	listCmd.Flags().StringVarP(&outputFormat, "format", "f", "", "Output format: table, json, csv, xlsx (or AZURE_DEVOPS_FORMAT, default: xlsx)")
+	listCmd.Flags().StringVarP(&outputFormat, "format", "f", "", "Output format: table, json, csv, xlsx, docx (or AZURE_DEVOPS_FORMAT, default: xlsx)")
 	listCmd.Flags().StringVar(&outputFile, "output-file", "", "Save output to file (or AZURE_DEVOPS_OUTPUT_FILE)")
 	listCmd.Flags().StringVar(&dateFormat, "date-format", "", "Date format for completion dates (or AZURE_DEVOPS_DATE_FORMAT, default: 02.01.2006)")
 	listCmd.Flags().StringVar(&delimiter, "delimiter", "", "CSV delimiter character (or AZURE_DEVOPS_DELIMITER, default: ;)")
 	listCmd.Flags().StringVar(&columns, "columns", "", "Columns to display, comma-separated (or AZURE_DEVOPS_COLUMNS, default: index,repo,title,completed,url)")
 	listCmd.Flags().BoolVar(&listColumns, "list-columns", false, "List available columns and exit")
+	listCmd.Flags().StringVar(&templatePath, "template", "", "Path to .docx template file (required when --format docx, or AZURE_DEVOPS_TEMPLATE)")
 }
 
 func runList(cmd *cobra.Command, args []string) error {
-	// Handle --list-columns flag
 	if listColumns {
 		fmt.Println(formatter.ListColumns())
 		return nil
 	}
 
-	// Resolve configuration with environment variable fallbacks
 	actualStatus := config.GetValueOrEnvWithDefault(status, "AZURE_DEVOPS_STATUS", "completed")
 	actualFormat := config.GetValueOrEnvWithDefault(outputFormat, "AZURE_DEVOPS_FORMAT", "xlsx")
 	actualOutputFile := config.GetValueOrEnv(outputFile, "AZURE_DEVOPS_OUTPUT_FILE")
@@ -110,7 +112,6 @@ func runList(cmd *cobra.Command, args []string) error {
 	actualDelimiter := config.GetValueOrEnvWithDefault(delimiter, "AZURE_DEVOPS_DELIMITER", ";")
 	actualColumns := config.GetValueOrEnvWithDefault(columns, "AZURE_DEVOPS_COLUMNS", formatter.DefaultColumns)
 
-	// Load configuration
 	cfg, err := config.LoadConfig(organization, project, repository, pat)
 	if err != nil {
 		return fmt.Errorf("configuration error: %w", err)
@@ -123,13 +124,11 @@ func runList(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Columns: %s\n", actualColumns)
 	}
 
-	// Validate columns configuration
 	_, err = formatter.ParseColumns(actualColumns)
 	if err != nil {
 		return fmt.Errorf("column configuration error: %w", err)
 	}
 
-	// Parse date range
 	from, to, err := parseDateRange(fromDate, toDate)
 	if err != nil {
 		return fmt.Errorf("date parsing error: %w", err)
@@ -140,10 +139,8 @@ func runList(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Status filter: %s\n", actualStatus)
 	}
 
-	// Create Azure DevOps client
 	azureClient := client.NewAzureDevOpsClient(cfg)
 
-	// Fetch pull requests
 	if verbose {
 		fmt.Fprintf(os.Stderr, "Fetching pull requests...\n")
 	}
@@ -157,23 +154,31 @@ func runList(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Found %d pull requests\n", len(prs))
 	}
 
-	// Determine output format from file extension if output file is specified
 	if actualOutputFile != "" {
-		if strings.HasSuffix(actualOutputFile, ".xlsx") {
+		lowered := strings.ToLower(strings.TrimSpace(actualOutputFile))
+		if strings.HasSuffix(lowered, ".xlsx") {
 			actualFormat = "xlsx"
-		} else if strings.HasSuffix(actualOutputFile, ".csv") {
+		} else if strings.HasSuffix(lowered, ".csv") {
 			actualFormat = "csv"
-		} else if strings.HasSuffix(actualOutputFile, ".json") {
+		} else if strings.HasSuffix(lowered, ".json") {
 			actualFormat = "json"
+		} else if strings.HasSuffix(lowered, ".docx") {
+			actualFormat = "docx"
 		}
 	}
 
-	// Validate delimiter is only used with CSV
+	resolvedTemplatePath := ""
+	if actualFormat == "docx" {
+		resolvedTemplatePath = config.GetValueOrEnv(templatePath, "AZURE_DEVOPS_TEMPLATE")
+		if resolvedTemplatePath == "" {
+			return fmt.Errorf("--template flag is required when using --format docx")
+		}
+	}
+
 	if actualDelimiter != ";" && actualFormat != "csv" {
 		return fmt.Errorf("--delimiter can only be used with CSV format")
 	}
 
-	// Handle XLSX format specially since it returns bytes
 	if actualFormat == "xlsx" {
 		xlsxFormatter := formatter.NewXLSXFormatter()
 		options := map[string]string{
@@ -203,6 +208,38 @@ func runList(cmd *cobra.Command, args []string) error {
 				fmt.Fprintf(os.Stderr, "XLSX saved to %s\n", defaultFile)
 			}
 		}
+		return nil
+	}
+
+	if actualFormat == "docx" {
+		docxFormatter := formatter.NewDOCXFormatter()
+		options := map[string]string{
+			"template":           resolvedTemplatePath,
+			"org":                cfg.Organization,
+			"project":            cfg.Project,
+			"dateFrom":           from.Format(actualDateFormat),
+			"dateTo":             to.Format(actualDateFormat),
+			"reportCreationDate": time.Now().UTC().Format(actualDateFormat),
+		}
+
+		docxData, err := docxFormatter.Format(prs, actualDateFormat, options)
+		if err != nil {
+			return fmt.Errorf("DOCX formatting error: %w", err)
+		}
+
+		outputTarget := actualOutputFile
+		if outputTarget == "" {
+			outputTarget = "pull-requests.docx"
+		}
+
+		if err := os.WriteFile(outputTarget, docxData, 0644); err != nil {
+			return fmt.Errorf("failed to save DOCX file: %w", err)
+		}
+
+		if verbose {
+			fmt.Fprintf(os.Stderr, "DOCX saved to %s\n", outputTarget)
+		}
+
 		return nil
 	}
 
@@ -259,9 +296,7 @@ func parseDateRange(from, to string) (time.Time, time.Time, error) {
 	var fromTime, toTime time.Time
 	var err error
 
-	// Parse 'from' date
 	if from == "" {
-		// Default to start of current month
 		fromTime = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	} else {
 		fromTime, err = time.Parse("2006-01-02", from)
@@ -270,9 +305,7 @@ func parseDateRange(from, to string) (time.Time, time.Time, error) {
 		}
 	}
 
-	// Parse 'to' date
 	if to == "" {
-		// Default to end of current month
 		nextMonth := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, time.UTC)
 		toTime = nextMonth.Add(-time.Second)
 	} else {
@@ -280,7 +313,6 @@ func parseDateRange(from, to string) (time.Time, time.Time, error) {
 		if err != nil {
 			return time.Time{}, time.Time{}, fmt.Errorf("invalid to date format: %w", err)
 		}
-		// Set to end of day
 		toTime = time.Date(toTime.Year(), toTime.Month(), toTime.Day(), 23, 59, 59, 0, time.UTC)
 	}
 

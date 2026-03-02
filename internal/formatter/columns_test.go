@@ -157,6 +157,15 @@ func TestColumnGetValue_ZeroDates(t *testing.T) {
 	assert.Equal(t, "N/A", completedValue)
 }
 
+func TestColumnGetValue_Link(t *testing.T) {
+	pr := models.PullRequest{ID: 42}
+
+	col := AvailableColumns["link"]
+	value := col.GetValue(pr, 1, "org", "project")
+
+	assert.Equal(t, "LINK TO PR (#42)", value)
+}
+
 func TestTableFormatter_CustomColumns(t *testing.T) {
 	formatter := NewTableFormatter()
 	prs := []models.PullRequest{

@@ -45,12 +45,10 @@ func (c *AzureDevOpsClient) GetPullRequests(from, to time.Time, status string) (
 		allPRs = append(allPRs, prs...)
 	}
 
-	// Sort by repository name, then by date (newest first)
 	sort.Slice(allPRs, func(i, j int) bool {
 		if allPRs[i].Repository.Name != allPRs[j].Repository.Name {
 			return allPRs[i].Repository.Name < allPRs[j].Repository.Name
 		}
-		// For date comparison, use ClosedDate for completed/abandoned PRs, CreationDate for active
 		var dateI, dateJ time.Time
 		if allPRs[i].Status == "completed" || allPRs[i].Status == "abandoned" {
 			dateI = allPRs[i].ClosedDate
@@ -62,7 +60,7 @@ func (c *AzureDevOpsClient) GetPullRequests(from, to time.Time, status string) (
 		} else {
 			dateJ = allPRs[j].CreationDate
 		}
-		return dateI.After(dateJ) // Newest first
+		return dateI.After(dateJ)
 	})
 
 	return allPRs, nil

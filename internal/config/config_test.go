@@ -115,7 +115,6 @@ func TestLoadConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set environment variables
 			for key, value := range tt.envVars {
 				if err := os.Setenv(key, value); err != nil {
 					t.Fatalf("failed to set env var %s: %v", key, err)
@@ -138,7 +137,6 @@ func TestLoadConfig(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, cfg)
 
-			// Validate configuration values
 			if tt.org != "" {
 				assert.Equal(t, tt.org, cfg.Organization)
 			} else if tt.envVars["AZURE_DEVOPS_ORG"] != "" {
