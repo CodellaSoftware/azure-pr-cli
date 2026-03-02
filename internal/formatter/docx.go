@@ -46,11 +46,22 @@ func (f *DOCXFormatter) Format(prs []models.PullRequest, dateFormat string, opti
 	var outBuf bytes.Buffer
 	zipWriter := zip.NewWriter(&outBuf)
 
+	// Build document-level placeholder map from only the date variables.
+	// Internal options (template, org, project) must not leak into docVars
+	// since the global replacement would otherwise corrupt any document text
+	// that happens to contain {{org}} or {{project}}.
+	docVars := make(map[string]string)
+	for _, key := range []string{"dateFrom", "dateTo", "reportCreationDate"} {
+		if v := options[key]; v != "" {
+			docVars[key] = v
+		}
+	}
+
 	foundDocument := false
 	for _, zf := range zipReader.File {
 		if zf.Name == "word/document.xml" {
 			foundDocument = true
-			newXML, err := processDocumentXML(zf, prs, dateFormat, org, project)
+			newXML, err := processDocumentXML(zf, prs, dateFormat, org, project, docVars)
 			if err != nil {
 				return nil, err
 			}
@@ -100,7 +111,7 @@ func copyZipEntry(w *zip.Writer, src *zip.File) error {
 	return err
 }
 
-func processDocumentXML(zf *zip.File, prs []models.PullRequest, dateFormat, org, project string) ([]byte, error) {
+func processDocumentXML(zf *zip.File, prs []models.PullRequest, dateFormat, org, project string, docVars map[string]string) ([]byte, error) {
 	rc, err := zf.Open()
 	if err != nil {
 		return nil, fmt.Errorf("failed to open document.xml: %w", err)
@@ -116,6 +127,8 @@ func processDocumentXML(zf *zip.File, prs []models.PullRequest, dateFormat, org,
 	if err != nil {
 		return nil, err
 	}
+
+	result = replaceDocumentPlaceholders(result, docVars)
 
 	return []byte(result), nil
 }
@@ -133,7 +146,7 @@ func expandTemplateRows(xmlStr string, prs []models.PullRequest, dateFormat, org
 	templateIdx := -1
 	for i, row := range rows {
 		normalized := normalizeRuns(row.content)
-		if strings.Contains(normalized, "{{") {
+		if hasPRPlaceholder(normalized) {
 			templateIdx = i
 			rows[i].content = normalized
 			break
@@ -141,10 +154,12 @@ func expandTemplateRows(xmlStr string, prs []models.PullRequest, dateFormat, org
 	}
 
 	if templateIdx == -1 {
-		return "", fmt.Errorf("no template row found in DOCX: no <w:tr> contains '{{' placeholders")
+		return "", fmt.Errorf("no template row found in DOCX: no <w:tr> contains a PR placeholder (e.g. {{title}}, {{author}})")
 	}
 
-	templateRow := rows[templateIdx].content
+	// Ensure all <w:t> elements carry xml:space="preserve" so that spaces
+	// adjacent to replaced placeholders are not trimmed by Word.
+	templateRow := ensurePreserveSpace(rows[templateIdx].content)
 
 	var expandedRows strings.Builder
 	for i, pr := range prs {
@@ -157,6 +172,26 @@ func expandTemplateRows(xmlStr string, prs []models.PullRequest, dateFormat, org
 		xmlStr[rows[templateIdx].end:]
 
 	return result, nil
+}
+
+// hasPRPlaceholder reports whether trXML contains at least one {{field}}
+// placeholder that maps to a known PR column in AvailableColumns.
+// Document-level variables ({{dateFrom}}, {{dateTo}}, {{reportCreationDate}})
+// are not PR columns and therefore do NOT qualify.
+func hasPRPlaceholder(trXML string) bool {
+	for _, m := range placeholderRe.FindAllStringSubmatch(trXML, -1) {
+		if _, ok := AvailableColumns[m[1]]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// ensurePreserveSpace adds xml:space="preserve" to any bare <w:t> element
+// (one without existing attributes) so that Word does not strip leading or
+// trailing spaces from text adjacent to substituted placeholders.
+func ensurePreserveSpace(xmlStr string) string {
+	return strings.ReplaceAll(xmlStr, "<w:t>", `<w:t xml:space="preserve">`)
 }
 
 func extractTableRows(xmlStr string) []rowSpan {
@@ -197,13 +232,19 @@ func extractTableRows(xmlStr string) []rowSpan {
 }
 
 // normalizeRuns fixes Word's split-run problem within a <w:tr> block.
-// For any <w:p> whose concatenated text contains "{{" or "}}", it merges
-// all <w:r> elements into a single run, preserving the first run's <w:rPr>.
+// For any <w:p> where at least one {{placeholder}} is split across multiple
+// <w:r> runs, it merges all runs into one, preserving the first run's <w:rPr>.
+// Paragraphs whose placeholders already sit within a single run are left
+// unchanged so that per-run formatting (bold, italic, etc.) is preserved.
 func normalizeRuns(trXML string) string {
 	return replaceParagraphs(trXML, func(pXML string) string {
 		allText := extractAllText(pXML)
 
 		if !strings.Contains(allText, "{{") && !strings.Contains(allText, "}}") {
+			return pXML
+		}
+
+		if !hasAnySplitPlaceholder(pXML, allText) {
 			return pXML
 		}
 
@@ -221,6 +262,17 @@ func normalizeRuns(trXML string) string {
 
 		return replaceRuns(pXML, newRun.String())
 	})
+}
+
+// hasAnySplitPlaceholder reports whether at least one {{word}} placeholder
+// found in allText is split across multiple <w:t> elements in pXML.
+func hasAnySplitPlaceholder(pXML, allText string) bool {
+	for _, m := range placeholderRe.FindAllString(allText, -1) {
+		if isSplitAcrossRuns(pXML, m) {
+			return true
+		}
+	}
+	return false
 }
 
 // replaceParagraphs finds each <w:p>...</w:p> in xml and calls fn on each,
@@ -307,6 +359,68 @@ func replaceRuns(pXML string, newRunXML string) string {
 	lastEnd := locs[len(locs)-1][1]
 
 	return pXML[:firstStart] + newRunXML + pXML[lastEnd:]
+}
+
+// isSplitAcrossRuns returns true when no single <w:t> element in pXML
+// contains the complete placeholder text. This detects Word's internal
+// behaviour of splitting user-typed text across multiple XML runs.
+func isSplitAcrossRuns(pXML, placeholder string) bool {
+	matches := wtTextRe.FindAllStringSubmatch(pXML, -1)
+	for _, m := range matches {
+		if strings.Contains(xmlUnescape(m[1]), placeholder) {
+			return false // placeholder is complete inside one run — no merge needed
+		}
+	}
+	return true
+}
+
+// replaceDocumentPlaceholders replaces document-level placeholders ({{dateFrom}},
+// {{dateTo}}, {{reportCreationDate}}) throughout the entire document XML.
+//
+// Run normalization (merging split runs) is performed only when a placeholder
+// is confirmed to be split across multiple XML runs. This preserves the
+// individual formatting of runs that happen to sit next to a placeholder.
+func replaceDocumentPlaceholders(xmlStr string, docVars map[string]string) string {
+	if len(docVars) == 0 {
+		return xmlStr
+	}
+
+	// Normalize only paragraphs where a placeholder is split across runs.
+	xmlStr = replaceParagraphs(xmlStr, func(pXML string) string {
+		allText := extractAllText(pXML)
+		needsNormalization := false
+		for key := range docVars {
+			placeholder := "{{" + key + "}}"
+			if strings.Contains(allText, placeholder) && isSplitAcrossRuns(pXML, placeholder) {
+				needsNormalization = true
+				break
+			}
+		}
+		if !needsNormalization {
+			return pXML
+		}
+
+		firstRunProps := extractFirstRunProps(pXML)
+		var newRun strings.Builder
+		newRun.WriteString("<w:r>")
+		if firstRunProps != "" {
+			newRun.WriteString(firstRunProps)
+		}
+		newRun.WriteString(`<w:t xml:space="preserve">`)
+		newRun.WriteString(xmlEscape(allText))
+		newRun.WriteString("</w:t>")
+		newRun.WriteString("</w:r>")
+		return replaceRuns(pXML, newRun.String())
+	})
+
+	// Global string replacement for each document variable.
+	// Placeholders that were in single runs are handled here directly;
+	// split ones were already merged above.
+	for key, value := range docVars {
+		xmlStr = strings.ReplaceAll(xmlStr, "{{"+key+"}}", xmlEscape(value))
+	}
+
+	return xmlStr
 }
 
 var placeholderRe = regexp.MustCompile(`\{\{(\w+)\}\}`)

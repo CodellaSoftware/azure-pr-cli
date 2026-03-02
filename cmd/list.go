@@ -227,11 +227,15 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	// Handle DOCX format specially since it reads a template and returns bytes
 	if actualFormat == "docx" {
+		lastDayOfMonth := time.Date(to.Year(), to.Month()+1, 0, 0, 0, 0, 0, time.UTC)
 		docxFormatter := formatter.NewDOCXFormatter()
 		options := map[string]string{
-			"template": templatePath,
-			"org":      cfg.Organization,
-			"project":  cfg.Project,
+			"template":            templatePath,
+			"org":                 cfg.Organization,
+			"project":             cfg.Project,
+			"dateFrom":            from.Format(actualDateFormat),
+			"dateTo":              to.Format(actualDateFormat),
+			"reportCreationDate":  lastDayOfMonth.Format(actualDateFormat),
 		}
 
 		docxData, err := docxFormatter.Format(prs, actualDateFormat, options)

@@ -161,11 +161,23 @@ func TestNormalizeRuns_PreservesRunProps(t *testing.T) {
 }
 
 func TestNormalizeRuns_CompletePlaceholderInOneRun(t *testing.T) {
-	// When {{placeholder}} is already in a single run, it still needs to be merged
-	// (combined text contains {{) so it gets rebuilt as one run — verify no corruption
+	// When {{placeholder}} is fully within a single <w:t>, no merge should happen.
 	input := `<w:tr><w:tc><w:p><w:r><w:t>{{title}}</w:t></w:r></w:p></w:tc></w:tr>`
 	result := normalizeRuns(input)
-	assert.Contains(t, result, "{{title}}")
+	// Paragraph must be returned unchanged — no extra wrapping.
+	assert.Equal(t, input, result)
+}
+
+func TestNormalizeRuns_PreservesFormattingWhenNoSplit(t *testing.T) {
+	// Paragraph has two runs with different formatting; {{title}} is complete in
+	// the second run. Because no placeholder is split, both runs must be preserved.
+	input := `<w:tr><w:tc><w:p>` +
+		`<w:r><w:rPr><w:b/></w:rPr><w:t>Label: </w:t></w:r>` +
+		`<w:r><w:t>{{title}}</w:t></w:r>` +
+		`</w:p></w:tc></w:tr>`
+	result := normalizeRuns(input)
+	assert.Equal(t, input, result)
+	assert.Equal(t, 2, strings.Count(result, "<w:r>"), "both runs must be preserved")
 }
 
 func TestNormalizeRuns_MultipleFieldsInRow(t *testing.T) {
@@ -306,6 +318,146 @@ func TestExpandTemplateRows_CorrectRowCount(t *testing.T) {
 	assert.Contains(t, result, "PR One")
 	assert.Contains(t, result, "PR Two")
 	assert.Contains(t, result, "PR Three")
+}
+
+// --- replaceDocumentPlaceholders ---
+
+func TestReplaceDocumentPlaceholders_Basic(t *testing.T) {
+	xmlStr := `<w:p><w:r><w:t>{{dateFrom}}</w:t></w:r></w:p>`
+	result := replaceDocumentPlaceholders(xmlStr, map[string]string{
+		"dateFrom": "01.02.2026",
+	})
+	assert.Contains(t, result, "01.02.2026")
+	assert.NotContains(t, result, "{{dateFrom}}")
+}
+
+func TestReplaceDocumentPlaceholders_MultipleVars(t *testing.T) {
+	xmlStr := `<w:body>` +
+		`<w:p><w:r><w:t>{{dateFrom}}</w:t></w:r></w:p>` +
+		`<w:p><w:r><w:t>{{dateTo}}</w:t></w:r></w:p>` +
+		`<w:p><w:r><w:t>{{reportCreationDate}}</w:t></w:r></w:p>` +
+		`</w:body>`
+	result := replaceDocumentPlaceholders(xmlStr, map[string]string{
+		"dateFrom":           "01.02.2026",
+		"dateTo":             "28.02.2026",
+		"reportCreationDate": "28.02.2026",
+	})
+	assert.Contains(t, result, "01.02.2026")
+	assert.Contains(t, result, "28.02.2026")
+	assert.NotContains(t, result, "{{dateFrom}}")
+	assert.NotContains(t, result, "{{dateTo}}")
+	assert.NotContains(t, result, "{{reportCreationDate}}")
+}
+
+func TestReplaceDocumentPlaceholders_SplitRun(t *testing.T) {
+	// Word splits {{dateFrom}} across two runs
+	xmlStr := `<w:p>` +
+		`<w:r><w:t>{{date</w:t></w:r>` +
+		`<w:r><w:t>From}}</w:t></w:r>` +
+		`</w:p>`
+	result := replaceDocumentPlaceholders(xmlStr, map[string]string{
+		"dateFrom": "01.02.2026",
+	})
+	assert.Contains(t, result, "01.02.2026")
+	assert.NotContains(t, result, "{{dateFrom}}")
+}
+
+func TestReplaceDocumentPlaceholders_UnknownVarLeftIntact(t *testing.T) {
+	xmlStr := `<w:p><w:r><w:t>{{unknown}}</w:t></w:r></w:p>`
+	result := replaceDocumentPlaceholders(xmlStr, map[string]string{
+		"dateFrom": "01.02.2026",
+	})
+	// {{unknown}} is not in docVars, should be untouched
+	assert.Contains(t, result, "{{unknown}}")
+}
+
+func TestReplaceDocumentPlaceholders_EmptyVars(t *testing.T) {
+	xmlStr := `<w:p><w:r><w:t>{{dateFrom}}</w:t></w:r></w:p>`
+	result := replaceDocumentPlaceholders(xmlStr, map[string]string{})
+	// Empty vars map → no replacement
+	assert.Equal(t, xmlStr, result)
+}
+
+func TestReplaceDocumentPlaceholders_PreservesMixedFormatting(t *testing.T) {
+	// A paragraph where the first run is bold and the second run (with placeholder)
+	// is not. Only the placeholder run should be replaced; the bold run untouched.
+	xmlStr := `<w:p>` +
+		`<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Label: </w:t></w:r>` +
+		`<w:r><w:t>{{dateFrom}}</w:t></w:r>` +
+		`</w:p>`
+	result := replaceDocumentPlaceholders(xmlStr, map[string]string{
+		"dateFrom": "01.02.2026",
+	})
+	assert.Contains(t, result, "01.02.2026")
+	assert.NotContains(t, result, "{{dateFrom}}")
+	// The bold run must still exist unchanged — formatting was NOT merged
+	assert.Contains(t, result, `<w:rPr><w:b/></w:rPr>`)
+	// Two separate <w:r> elements must still be present (no merging happened)
+	assert.Equal(t, 2, strings.Count(result, "<w:r>"))
+}
+
+func TestReplaceDocumentPlaceholders_InternalOptionsNotLeaked(t *testing.T) {
+	// Passing only date keys means internal keys like "org" are never replaced
+	// even if {{org}} appears in the document.
+	xmlStr := `<w:p><w:r><w:t>{{org}}</w:t></w:r></w:p>`
+	result := replaceDocumentPlaceholders(xmlStr, map[string]string{
+		"dateFrom": "01.02.2026",
+	})
+	// {{org}} is not a date key → must remain untouched
+	assert.Contains(t, result, "{{org}}")
+}
+
+func TestReplaceDocumentPlaceholders_XMLEscaping(t *testing.T) {
+	xmlStr := `<w:p><w:r><w:t>{{dateFrom}}</w:t></w:r></w:p>`
+	result := replaceDocumentPlaceholders(xmlStr, map[string]string{
+		"dateFrom": "01 & 02 <March>",
+	})
+	assert.Contains(t, result, "01 &amp; 02 &lt;March&gt;")
+}
+
+// --- DOCXFormatter integration with document-level placeholders ---
+
+func TestDOCXFormatter_DocumentVarsOutsideTable(t *testing.T) {
+	// Placeholders appear in a paragraph outside the table
+	docXML := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+		`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+		`<w:body>` +
+		`<w:p><w:r><w:t>Period: {{dateFrom}} - {{dateTo}}</w:t></w:r></w:p>` +
+		`<w:tbl>` +
+		`<w:tr><w:tc><w:p><w:r><w:t>{{title}}</w:t></w:r></w:p></w:tc></w:tr>` +
+		`</w:tbl>` +
+		`<w:p><w:r><w:t>Created: {{reportCreationDate}}</w:t></w:r></w:p>` +
+		`</w:body></w:document>`
+	path := writeTempDocx(t, buildMinimalDocx(docXML))
+
+	f := NewDOCXFormatter()
+	prs := []models.PullRequest{{ID: 1, Title: "My PR"}}
+	output, err := f.Format(prs, "02.01.2006", map[string]string{
+		"template":            path,
+		"dateFrom":            "01.02.2026",
+		"dateTo":              "28.02.2026",
+		"reportCreationDate":  "28.02.2026",
+	})
+	require.NoError(t, err)
+
+	zr, err := zip.NewReader(bytes.NewReader(output), int64(len(output)))
+	require.NoError(t, err)
+
+	for _, zf := range zr.File {
+		if zf.Name == "word/document.xml" {
+			rc, _ := zf.Open()
+			data, _ := io.ReadAll(rc)
+			rc.Close()
+			content := string(data)
+
+			assert.Contains(t, content, "01.02.2026")
+			assert.Contains(t, content, "28.02.2026")
+			assert.Contains(t, content, "My PR")
+			assert.NotContains(t, content, "{{dateFrom}}")
+			assert.NotContains(t, content, "{{dateTo}}")
+			assert.NotContains(t, content, "{{reportCreationDate}}")
+		}
+	}
 }
 
 // --- DOCXFormatter integration ---
@@ -483,4 +635,111 @@ func TestDOCXFormatter_NonDocumentFilesPreserved(t *testing.T) {
 	assert.True(t, names["[Content_Types].xml"])
 	assert.True(t, names["_rels/.rels"])
 	assert.True(t, names["word/document.xml"])
+}
+
+// --- hasPRPlaceholder ---
+
+func TestHasPRPlaceholder_KnownColumn(t *testing.T) {
+	row := `<w:tr><w:tc><w:p><w:r><w:t>{{title}}</w:t></w:r></w:p></w:tc></w:tr>`
+	assert.True(t, hasPRPlaceholder(row))
+}
+
+func TestHasPRPlaceholder_DocumentLevelOnly(t *testing.T) {
+	// {{dateFrom}} is not a PR column — must not qualify as template row
+	row := `<w:tr><w:tc><w:p><w:r><w:t>{{dateFrom}}</w:t></w:r></w:p></w:tc></w:tr>`
+	assert.False(t, hasPRPlaceholder(row))
+}
+
+func TestHasPRPlaceholder_NoPlaceholders(t *testing.T) {
+	row := `<w:tr><w:tc><w:p><w:r><w:t>plain text</w:t></w:r></w:p></w:tc></w:tr>`
+	assert.False(t, hasPRPlaceholder(row))
+}
+
+// --- ensurePreserveSpace ---
+
+func TestEnsurePreserveSpace_AddsMissing(t *testing.T) {
+	input := `<w:r><w:t>hello </w:t></w:r>`
+	result := ensurePreserveSpace(input)
+	assert.Contains(t, result, `<w:t xml:space="preserve">hello </w:t>`)
+}
+
+func TestEnsurePreserveSpace_DoesNotDuplicate(t *testing.T) {
+	input := `<w:r><w:t xml:space="preserve">hello </w:t></w:r>`
+	result := ensurePreserveSpace(input)
+	// Must not create double attribute
+	assert.Equal(t, input, result)
+	assert.Equal(t, 1, strings.Count(result, `xml:space="preserve"`))
+}
+
+// --- multi-table: document-level vars in first table, PR data in second ---
+
+func TestExpandTemplateRows_SkipsDocVarRows(t *testing.T) {
+	// First table has only document-level vars (not PR columns) → must be skipped.
+	// Second table has PR columns → must be expanded.
+	xmlStr := `<w:body>` +
+		`<w:tbl>` +
+		`<w:tr><w:tc><w:p><w:r><w:t>From: {{dateFrom}}</w:t></w:r></w:p></w:tc></w:tr>` +
+		`</w:tbl>` +
+		`<w:tbl>` +
+		`<w:tr><w:tc><w:p><w:r><w:t>{{title}}</w:t></w:r></w:p></w:tc></w:tr>` +
+		`</w:tbl>` +
+		`</w:body>`
+
+	prs := []models.PullRequest{{ID: 1, Title: "Multi-table PR"}}
+	result, err := expandTemplateRows(xmlStr, prs, "", "", "")
+
+	require.NoError(t, err)
+	// PR title must appear (second table expanded)
+	assert.Contains(t, result, "Multi-table PR")
+	// Document-level placeholder in first table must be left intact for
+	// replaceDocumentPlaceholders to handle later
+	assert.Contains(t, result, "{{dateFrom}}")
+	// The template placeholder itself must be gone
+	assert.NotContains(t, result, "{{title}}")
+}
+
+func TestDOCXFormatter_MultiTable(t *testing.T) {
+	// Full integration: document has a header table with {{dateFrom}}/{{dateTo}}
+	// and a data table with {{title}}. Both must be filled correctly.
+	docXML := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+		`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+		`<w:body>` +
+		`<w:tbl>` +
+		`<w:tr><w:tc><w:p><w:r><w:t>{{dateFrom}} - {{dateTo}}</w:t></w:r></w:p></w:tc></w:tr>` +
+		`</w:tbl>` +
+		`<w:tbl>` +
+		`<w:tr><w:tc><w:p><w:r><w:t>Title</w:t></w:r></w:p></w:tc></w:tr>` +
+		`<w:tr><w:tc><w:p><w:r><w:t>{{title}}</w:t></w:r></w:p></w:tc></w:tr>` +
+		`</w:tbl>` +
+		`</w:body></w:document>`
+
+	path := writeTempDocx(t, buildMinimalDocx(docXML))
+	f := NewDOCXFormatter()
+	prs := []models.PullRequest{{ID: 1, Title: "Feature A"}}
+
+	output, err := f.Format(prs, "02.01.2006", map[string]string{
+		"template": path,
+		"dateFrom": "01.02.2026",
+		"dateTo":   "28.02.2026",
+	})
+	require.NoError(t, err)
+
+	zr, err := zip.NewReader(bytes.NewReader(output), int64(len(output)))
+	require.NoError(t, err)
+
+	for _, zf := range zr.File {
+		if zf.Name == "word/document.xml" {
+			rc, _ := zf.Open()
+			data, _ := io.ReadAll(rc)
+			rc.Close()
+			content := string(data)
+
+			assert.Contains(t, content, "01.02.2026", "dateFrom must be substituted")
+			assert.Contains(t, content, "28.02.2026", "dateTo must be substituted")
+			assert.Contains(t, content, "Feature A", "PR title must be substituted")
+			assert.NotContains(t, content, "{{dateFrom}}")
+			assert.NotContains(t, content, "{{dateTo}}")
+			assert.NotContains(t, content, "{{title}}")
+		}
+	}
 }

@@ -30,6 +30,8 @@ go.work
 # Output files
 *.csv
 *.xlsx
+*.docx
+*.pdf
 
 # IDE files
 .vscode/
@@ -38,3 +40,7 @@ go.work
 # OS files
 .DS_Store
 Thumbs.db
+
+# AI
+.claude/
+.clinerules/
