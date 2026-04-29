@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+const testUserID = "test-user-id-guid"
 
 func TestNewAzureDevOpsClient(t *testing.T) {
 	cfg := &config.Config{
@@ -38,9 +41,7 @@ func TestGetPullRequests_Success(t *testing.T) {
 			Status:       "completed",
 			CreationDate: now.Add(-48 * time.Hour),
 			ClosedDate:   now.Add(-24 * time.Hour),
-			Repository: models.Repository{
-				Name: "testrepo",
-			},
+			Repository:   models.Repository{Name: "testrepo"},
 		},
 		{
 			ID:           2,
@@ -48,42 +49,29 @@ func TestGetPullRequests_Success(t *testing.T) {
 			Status:       "completed",
 			CreationDate: now.Add(-72 * time.Hour),
 			ClosedDate:   now.Add(-12 * time.Hour),
-			Repository: models.Repository{
-				Name: "testrepo",
-			},
+			Repository:   models.Repository{Name: "testrepo"},
 		},
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "GET", r.Method)
+		assert.NotEmpty(t, r.Header.Get("Authorization"))
+		assert.Contains(t, r.Header.Get("Authorization"), "Basic")
+
+		if strings.Contains(r.URL.Path, "_apis/connectionData") {
+			serveConnectionData(t, w, testUserID)
+			return
+		}
+
 		assert.Contains(t, r.URL.Path, "_apis/git/repositories")
 		assert.Contains(t, r.URL.Query().Get("api-version"), apiVersion)
+		assert.Equal(t, testUserID, r.URL.Query().Get("searchCriteria.creatorId"))
 
-		authHeader := r.Header.Get("Authorization")
-		assert.NotEmpty(t, authHeader)
-		assert.Contains(t, authHeader, "Basic")
-
-		response := models.PRListResponse{
-			Value: testPRs,
-			Count: len(testPRs),
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(response); err != nil {
-			t.Fatalf("Failed to encode response: %v", err)
-		}
+		serveJSON(t, w, models.PRListResponse{Value: testPRs, Count: len(testPRs)})
 	}))
 	defer server.Close()
 
-	cfg := &config.Config{
-		Organization: "testorg",
-		Project:      "testproject",
-		Repositories: []string{"testrepo"},
-		PAT:          "testtoken",
-	}
-
-	client := NewAzureDevOpsClient(cfg)
-	client.SetBaseURL(server.URL)
+	client := givenClientWithServer(server)
 
 	from := now.Add(-168 * time.Hour)
 	to := now
@@ -98,21 +86,11 @@ func TestGetPullRequests_Success(t *testing.T) {
 func TestGetPullRequests_APIError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		if _, err := w.Write([]byte("Unauthorized")); err != nil {
-			t.Fatalf("Failed to write response: %v", err)
-		}
+		_, _ = w.Write([]byte("Unauthorized"))
 	}))
 	defer server.Close()
 
-	cfg := &config.Config{
-		Organization: "testorg",
-		Project:      "testproject",
-		Repositories: []string{"testrepo"},
-		PAT:          "invalidtoken",
-	}
-
-	client := NewAzureDevOpsClient(cfg)
-	client.SetBaseURL(server.URL)
+	client := givenClientWithServer(server)
 
 	from := time.Now().Add(-24 * time.Hour)
 	to := time.Now()
@@ -125,21 +103,11 @@ func TestGetPullRequests_APIError(t *testing.T) {
 func TestGetPullRequests_InvalidJSON(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if _, err := w.Write([]byte("invalid json")); err != nil {
-			t.Fatalf("Failed to write response: %v", err)
-		}
+		_, _ = w.Write([]byte("invalid json"))
 	}))
 	defer server.Close()
 
-	cfg := &config.Config{
-		Organization: "testorg",
-		Project:      "testproject",
-		Repositories: []string{"testrepo"},
-		PAT:          "testtoken",
-	}
-
-	client := NewAzureDevOpsClient(cfg)
-	client.SetBaseURL(server.URL)
+	client := givenClientWithServer(server)
 
 	from := time.Now().Add(-24 * time.Hour)
 	to := time.Now()
@@ -147,6 +115,50 @@ func TestGetPullRequests_InvalidJSON(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to parse response")
+}
+
+func TestResolveCurrentUserID_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Contains(t, r.URL.Path, "_apis/connectionData")
+		serveConnectionData(t, w, testUserID)
+	}))
+	defer server.Close()
+
+	client := givenClientWithServer(server)
+
+	userID, err := client.resolveCurrentUserID()
+
+	require.NoError(t, err)
+	assert.Equal(t, testUserID, userID)
+}
+
+func TestResolveCurrentUserID_APIError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte("Forbidden"))
+	}))
+	defer server.Close()
+
+	client := givenClientWithServer(server)
+
+	_, err := client.resolveCurrentUserID()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "API returned status 403")
+}
+
+func TestResolveCurrentUserID_MissingID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(t, w, connectionDataResponse{})
+	}))
+	defer server.Close()
+
+	client := givenClientWithServer(server)
+
+	_, err := client.resolveCurrentUserID()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "could not determine authenticated user ID")
 }
 
 func TestBuildURL(t *testing.T) {
@@ -164,6 +176,7 @@ func TestBuildURL(t *testing.T) {
 		name             string
 		status           string
 		expectedContains []string
+		notContains      []string
 	}{
 		{
 			name:   "completed status",
@@ -174,6 +187,7 @@ func TestBuildURL(t *testing.T) {
 				"testrepo",
 				"searchCriteria.status=completed",
 				"searchCriteria.minTime=2024-01-01T00:00:00Z",
+				"searchCriteria.creatorId=" + testUserID,
 			},
 		},
 		{
@@ -184,20 +198,21 @@ func TestBuildURL(t *testing.T) {
 				"testproject",
 				"testrepo",
 				"searchCriteria.minTime=2024-01-01T00:00:00Z",
+				"searchCriteria.creatorId=" + testUserID,
 			},
+			notContains: []string{"searchCriteria.status="},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			url := client.buildURL("testrepo", from, tt.status)
+			url := client.buildURL("testrepo", from, tt.status, testUserID)
 
 			for _, expected := range tt.expectedContains {
 				assert.Contains(t, url, expected)
 			}
-
-			if tt.status == "all" {
-				assert.NotContains(t, url, "searchCriteria.status=")
+			for _, excluded := range tt.notContains {
+				assert.NotContains(t, url, excluded)
 			}
 		})
 	}
@@ -278,7 +293,6 @@ func TestFilterPRs(t *testing.T) {
 			filtered := client.filterPRs(prs, from, to, tt.status)
 
 			assert.Len(t, filtered, tt.expectedCount)
-
 			for i, expectedID := range tt.expectedIDs {
 				assert.Equal(t, expectedID, filtered[i].ID)
 			}
@@ -295,9 +309,7 @@ func TestGetPullRequests_MultipleRepositories(t *testing.T) {
 			Status:       "completed",
 			CreationDate: now.Add(-48 * time.Hour),
 			ClosedDate:   now.Add(-24 * time.Hour),
-			Repository: models.Repository{
-				Name: "repo1",
-			},
+			Repository:   models.Repository{Name: "repo1"},
 		},
 	}
 	testPRsRepo2 := []models.PullRequest{
@@ -307,36 +319,23 @@ func TestGetPullRequests_MultipleRepositories(t *testing.T) {
 			Status:       "completed",
 			CreationDate: now.Add(-24 * time.Hour),
 			ClosedDate:   now.Add(-12 * time.Hour),
-			Repository: models.Repository{
-				Name: "repo2",
-			},
+			Repository:   models.Repository{Name: "repo2"},
 		},
 	}
 
-	callCount := 0
-
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "GET", r.Method)
+		if strings.Contains(r.URL.Path, "_apis/connectionData") {
+			serveConnectionData(t, w, testUserID)
+			return
+		}
+
 		assert.Contains(t, r.URL.Path, "_apis/git/repositories")
 
-		var responsePRs []models.PullRequest
-		if callCount == 0 {
-			assert.Contains(t, r.URL.Path, "/repositories/repo1/")
-			responsePRs = testPRsRepo1
+		if strings.Contains(r.URL.Path, "/repositories/repo1/") {
+			serveJSON(t, w, models.PRListResponse{Value: testPRsRepo1, Count: len(testPRsRepo1)})
 		} else {
 			assert.Contains(t, r.URL.Path, "/repositories/repo2/")
-			responsePRs = testPRsRepo2
-		}
-		callCount++
-
-		response := models.PRListResponse{
-			Value: responsePRs,
-			Count: len(responsePRs),
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(response); err != nil {
-			t.Fatalf("Failed to encode response: %v", err)
+			serveJSON(t, w, models.PRListResponse{Value: testPRsRepo2, Count: len(testPRsRepo2)})
 		}
 	}))
 	defer server.Close()
@@ -347,18 +346,16 @@ func TestGetPullRequests_MultipleRepositories(t *testing.T) {
 		Repositories: []string{"repo1", "repo2"},
 		PAT:          "testtoken",
 	}
-
 	client := NewAzureDevOpsClient(cfg)
 	client.SetBaseURL(server.URL)
 
-	from := time.Now().Add(-7 * 24 * time.Hour)
-	to := time.Now()
+	from := now.Add(-7 * 24 * time.Hour)
+	to := now
 
 	prs, err := client.GetPullRequests(from, to, "completed")
 
 	require.NoError(t, err)
 	assert.Len(t, prs, 2)
-
 	assert.Equal(t, "repo1", prs[0].Repository.Name)
 	assert.Equal(t, "Repo1 PR 1", prs[0].Title)
 	assert.Equal(t, "repo2", prs[1].Repository.Name)
@@ -373,34 +370,22 @@ func TestGetPullRequests_MultipleRepositories_Error(t *testing.T) {
 			Status:       "completed",
 			CreationDate: time.Now().Add(-48 * time.Hour),
 			ClosedDate:   time.Now().Add(-24 * time.Hour),
-			Repository: models.Repository{
-				Name: "repo1",
-			},
+			Repository:   models.Repository{Name: "repo1"},
 		},
 	}
 
-	callCount := 0
-
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if callCount == 0 {
-			assert.Contains(t, r.URL.Path, "/repositories/repo1/")
-			callCount++
+		if strings.Contains(r.URL.Path, "_apis/connectionData") {
+			serveConnectionData(t, w, testUserID)
+			return
+		}
 
-			response := models.PRListResponse{
-				Value: testPRsRepo1,
-				Count: len(testPRsRepo1),
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(response); err != nil {
-				t.Fatalf("Failed to encode response: %v", err)
-			}
+		if strings.Contains(r.URL.Path, "/repositories/repo1/") {
+			serveJSON(t, w, models.PRListResponse{Value: testPRsRepo1, Count: len(testPRsRepo1)})
 		} else {
 			assert.Contains(t, r.URL.Path, "/repositories/repo2/")
 			w.WriteHeader(http.StatusUnauthorized)
-			if _, err := w.Write([]byte("Unauthorized")); err != nil {
-				t.Fatalf("Failed to write response: %v", err)
-			}
+			_, _ = w.Write([]byte("Unauthorized"))
 		}
 	}))
 	defer server.Close()
@@ -411,7 +396,6 @@ func TestGetPullRequests_MultipleRepositories_Error(t *testing.T) {
 		Repositories: []string{"repo1", "repo2"},
 		PAT:          "testtoken",
 	}
-
 	client := NewAzureDevOpsClient(cfg)
 	client.SetBaseURL(server.URL)
 
@@ -426,14 +410,7 @@ func TestGetPullRequests_MultipleRepositories_Error(t *testing.T) {
 }
 
 func TestSetHTTPClient(t *testing.T) {
-	cfg := &config.Config{
-		Organization: "testorg",
-		Project:      "testproject",
-		Repositories: []string{"testrepo"},
-		PAT:          "testtoken",
-	}
-
-	client := NewAzureDevOpsClient(cfg)
+	client := givenClientWithServer(nil)
 
 	customClient := &http.Client{Timeout: 60 * time.Second}
 	client.SetHTTPClient(customClient)
@@ -442,17 +419,9 @@ func TestSetHTTPClient(t *testing.T) {
 }
 
 func TestSetBaseURL(t *testing.T) {
-	cfg := &config.Config{
-		Organization: "testorg",
-		Project:      "testproject",
-		Repositories: []string{"testrepo"},
-		PAT:          "testtoken",
-	}
+	client := givenClientWithServer(nil)
 
-	client := NewAzureDevOpsClient(cfg)
-
-	customURL := "https://custom.dev.azure.com"
-	client.SetBaseURL(customURL)
+	client.SetBaseURL("https://custom.dev.azure.com")
 
 	assert.NotNil(t, client)
 }
@@ -460,21 +429,11 @@ func TestSetBaseURL(t *testing.T) {
 func TestGetPullRequests_InvalidJSONResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if _, err := w.Write([]byte("invalid json response")); err != nil {
-			t.Fatalf("Failed to write response: %v", err)
-		}
+		_, _ = w.Write([]byte("invalid json response"))
 	}))
 	defer server.Close()
 
-	cfg := &config.Config{
-		Organization: "testorg",
-		Project:      "testproject",
-		Repositories: []string{"testrepo"},
-		PAT:          "testtoken",
-	}
-
-	client := NewAzureDevOpsClient(cfg)
-	client.SetBaseURL(server.URL)
+	client := givenClientWithServer(server)
 
 	from := time.Now().Add(-24 * time.Hour)
 	to := time.Now()
@@ -483,4 +442,33 @@ func TestGetPullRequests_InvalidJSONResponse(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to parse response")
+}
+
+func givenClientWithServer(server *httptest.Server) *AzureDevOpsClient {
+	cfg := &config.Config{
+		Organization: "testorg",
+		Project:      "testproject",
+		Repositories: []string{"testrepo"},
+		PAT:          "testtoken",
+	}
+	c := NewAzureDevOpsClient(cfg)
+	if server != nil {
+		c.SetBaseURL(server.URL)
+	}
+	return c
+}
+
+func serveConnectionData(t *testing.T, w http.ResponseWriter, userID string) {
+	t.Helper()
+	var data connectionDataResponse
+	data.AuthenticatedUser.ID = userID
+	serveJSON(t, w, data)
+}
+
+func serveJSON(t *testing.T, w http.ResponseWriter, v any) {
+	t.Helper()
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		t.Fatalf("failed to encode response: %v", err)
+	}
 }

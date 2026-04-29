@@ -14,7 +14,7 @@ type Column struct {
 	GetValue    func(pr models.PullRequest, index int, org, project string) string
 }
 
-var DefaultColumns = "index,repo,title,completed,url,link"
+var DefaultColumns = "index,repo,title,completed,url"
 
 var AvailableColumns = map[string]Column{
 	"index": {
@@ -132,6 +132,23 @@ var AvailableColumns = map[string]Column{
 var ColumnOrder = []string{
 	"index", "id", "repo", "title", "author", "status",
 	"created", "completed", "source", "target", "merge_status", "url", "link",
+}
+
+func FormatColumnValue(pr models.PullRequest, col Column, index int, dateFormat, org, project string) string {
+	switch col.ID {
+	case "completed":
+		return pr.FormatCompletionDate(dateFormat)
+	case "created":
+		if pr.CreationDate.IsZero() {
+			return "N/A"
+		}
+		if dateFormat != "" {
+			return pr.CreationDate.Format(dateFormat)
+		}
+		return pr.CreationDate.Format("2006-01-02 15:04:05")
+	default:
+		return col.GetValue(pr, index, org, project)
+	}
 }
 
 func ParseColumns(columnsStr string) ([]Column, error) {

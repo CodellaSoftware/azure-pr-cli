@@ -13,13 +13,12 @@ func TestParseColumns_Default(t *testing.T) {
 	cols, err := ParseColumns("")
 
 	require.NoError(t, err)
-	assert.Len(t, cols, 6)
+	assert.Len(t, cols, 5)
 	assert.Equal(t, "index", cols[0].ID)
 	assert.Equal(t, "repo", cols[1].ID)
 	assert.Equal(t, "title", cols[2].ID)
 	assert.Equal(t, "completed", cols[3].ID)
 	assert.Equal(t, "url", cols[4].ID)
-	assert.Equal(t, "link", cols[5].ID)
 }
 
 func TestParseColumns_CustomColumns(t *testing.T) {
@@ -127,7 +126,7 @@ func TestColumnGetValue_URL(t *testing.T) {
 	col := AvailableColumns["url"]
 	value := col.GetValue(pr, 1, "testorg", "testproject")
 
-	assert.Equal(t, "https://testorg.visualstudio.com/testproject/_git/my-repo/pullrequest/456", value)
+	assert.Equal(t, "https://dev.azure.com/testorg/testproject/_git/my-repo/pullrequest/456", value)
 }
 
 func TestColumnGetValue_Dates(t *testing.T) {
@@ -189,13 +188,14 @@ func TestTableFormatter_CustomColumns(t *testing.T) {
 	output, err := formatter.Format(prs, "", options)
 
 	require.NoError(t, err)
-	assert.Contains(t, output, "#")
-	assert.Contains(t, output, "PR NAME")
-	assert.Contains(t, output, "AUTHOR")
-	assert.Contains(t, output, "STATUS")
-	assert.Contains(t, output, "Jane Doe")
-	assert.Contains(t, output, "completed")
-	assert.NotContains(t, output, "REPO NAME")
+	out := string(output)
+	assert.Contains(t, out, "#")
+	assert.Contains(t, out, "PR NAME")
+	assert.Contains(t, out, "AUTHOR")
+	assert.Contains(t, out, "STATUS")
+	assert.Contains(t, out, "Jane Doe")
+	assert.Contains(t, out, "completed")
+	assert.NotContains(t, out, "REPO NAME")
 }
 
 func TestCSVFormatter_CustomColumns(t *testing.T) {
@@ -217,7 +217,8 @@ func TestCSVFormatter_CustomColumns(t *testing.T) {
 	output, err := formatter.Format(prs, "", options)
 
 	require.NoError(t, err)
-	assert.Contains(t, output, "#,REPO NAME,STATUS")
-	assert.Contains(t, output, "test-repo")
-	assert.Contains(t, output, "active")
+	out := string(output)
+	assert.Contains(t, out, "#,REPO NAME,STATUS")
+	assert.Contains(t, out, "test-repo")
+	assert.Contains(t, out, "active")
 }

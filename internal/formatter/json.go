@@ -12,24 +12,28 @@ func NewJSONFormatter() *JSONFormatter {
 	return &JSONFormatter{}
 }
 
-func (f *JSONFormatter) Format(prs []models.PullRequest, dateFormat string, options map[string]string) (string, error) {
-	type indexedPR struct {
-		Index int `json:"index"`
-		models.PullRequest
+func (f *JSONFormatter) Format(prs []models.PullRequest, dateFormat string, options map[string]string) ([]byte, error) {
+	columnsStr := options["columns"]
+	if columnsStr == "" {
+		columnsStr = DefaultColumns
 	}
 
-	indexedPRs := make([]indexedPR, len(prs))
-	for i, pr := range prs {
-		indexedPRs[i] = indexedPR{
-			Index:       i + 1,
-			PullRequest: pr,
-		}
-	}
-
-	output, err := json.MarshalIndent(indexedPRs, "", "  ")
+	cols, err := ParseColumns(columnsStr)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return string(output), nil
+	org := options["org"]
+	project := options["project"]
+
+	rows := make([]map[string]string, len(prs))
+	for i, pr := range prs {
+		row := make(map[string]string, len(cols))
+		for _, col := range cols {
+			row[col.ID] = FormatColumnValue(pr, col, i+1, dateFormat, org, project)
+		}
+		rows[i] = row
+	}
+
+	return json.MarshalIndent(rows, "", "  ")
 }

@@ -179,112 +179,58 @@ func runList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--delimiter can only be used with CSV format")
 	}
 
-	if actualFormat == "xlsx" {
-		xlsxFormatter := formatter.NewXLSXFormatter()
-		options := map[string]string{
-			"org":     cfg.Organization,
-			"project": cfg.Project,
-			"columns": actualColumns,
-		}
-
-		xlsxData, err := xlsxFormatter.Format(prs, actualDateFormat, options)
-		if err != nil {
-			return fmt.Errorf("XLSX formatting error: %w", err)
-		}
-
-		if actualOutputFile != "" {
-			if err := os.WriteFile(actualOutputFile, xlsxData, 0644); err != nil {
-				return fmt.Errorf("failed to save XLSX file: %w", err)
-			}
-			if verbose {
-				fmt.Fprintf(os.Stderr, "XLSX saved to %s\n", actualOutputFile)
-			}
-		} else {
-			defaultFile := "pull-requests.xlsx"
-			if err := os.WriteFile(defaultFile, xlsxData, 0644); err != nil {
-				return fmt.Errorf("failed to save XLSX file: %w", err)
-			}
-			if verbose {
-				fmt.Fprintf(os.Stderr, "XLSX saved to %s\n", defaultFile)
-			}
-		}
-		return nil
-	}
-
-	if actualFormat == "docx" {
-		docxFormatter := formatter.NewDOCXFormatter()
-		options := map[string]string{
-			"template":           resolvedTemplatePath,
-			"org":                cfg.Organization,
-			"project":            cfg.Project,
-			"dateFrom":           from.Format(actualDateFormat),
-			"dateTo":             to.Format(actualDateFormat),
-			"reportCreationDate": time.Now().UTC().Format(actualDateFormat),
-		}
-
-		docxData, err := docxFormatter.Format(prs, actualDateFormat, options)
-		if err != nil {
-			return fmt.Errorf("DOCX formatting error: %w", err)
-		}
-
-		outputTarget := actualOutputFile
-		if outputTarget == "" {
-			outputTarget = "pull-requests.docx"
-		}
-
-		if err := os.WriteFile(outputTarget, docxData, 0644); err != nil {
-			return fmt.Errorf("failed to save DOCX file: %w", err)
-		}
-
-		if verbose {
-			fmt.Fprintf(os.Stderr, "DOCX saved to %s\n", outputTarget)
-		}
-
-		return nil
+	options := map[string]string{
+		"org":     cfg.Organization,
+		"project": cfg.Project,
+		"columns": actualColumns,
 	}
 
 	var formatterInstance formatter.Formatter
-	var options map[string]string
 
 	switch actualFormat {
+	case "xlsx":
+		formatterInstance = formatter.NewXLSXFormatter()
+	case "docx":
+		options["template"] = resolvedTemplatePath
+		options["dateFrom"] = from.Format(actualDateFormat)
+		options["dateTo"] = to.Format(actualDateFormat)
+		options["reportCreationDate"] = time.Now().UTC().Format(actualDateFormat)
+		formatterInstance = formatter.NewDOCXFormatter()
 	case "json":
 		formatterInstance = formatter.NewJSONFormatter()
-		options = map[string]string{
-			"columns": actualColumns,
-		}
 	case "csv":
+		options["delimiter"] = actualDelimiter
 		formatterInstance = formatter.NewCSVFormatter()
-		options = map[string]string{
-			"delimiter": actualDelimiter,
-			"org":       cfg.Organization,
-			"project":   cfg.Project,
-			"columns":   actualColumns,
-		}
 	case "table":
 		formatterInstance = formatter.NewTableFormatter()
-		options = map[string]string{
-			"org":     cfg.Organization,
-			"project": cfg.Project,
-			"columns": actualColumns,
-		}
 	default:
 		return fmt.Errorf("unsupported output format: %s", actualFormat)
 	}
 
-	output, err := formatterInstance.Format(prs, actualDateFormat, options)
+	data, err := formatterInstance.Format(prs, actualDateFormat, options)
 	if err != nil {
 		return fmt.Errorf("formatting error: %w", err)
 	}
 
-	if actualOutputFile != "" {
-		if err := os.WriteFile(actualOutputFile, []byte(output), 0644); err != nil {
+	outputPath := actualOutputFile
+	if outputPath == "" {
+		switch actualFormat {
+		case "xlsx":
+			outputPath = "pull-requests.xlsx"
+		case "docx":
+			outputPath = "pull-requests.docx"
+		}
+	}
+
+	if outputPath != "" {
+		if err := os.WriteFile(outputPath, data, 0644); err != nil {
 			return fmt.Errorf("failed to save file: %w", err)
 		}
 		if verbose {
-			fmt.Fprintf(os.Stderr, "Output saved to %s\n", actualOutputFile)
+			fmt.Fprintf(os.Stderr, "Output saved to %s\n", outputPath)
 		}
 	} else {
-		fmt.Println(output)
+		_, _ = os.Stdout.Write(data)
 	}
 
 	return nil

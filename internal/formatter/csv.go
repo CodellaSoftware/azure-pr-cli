@@ -14,7 +14,7 @@ func NewCSVFormatter() *CSVFormatter {
 	return &CSVFormatter{}
 }
 
-func (f *CSVFormatter) Format(prs []models.PullRequest, dateFormat string, options map[string]string) (string, error) {
+func (f *CSVFormatter) Format(prs []models.PullRequest, dateFormat string, options map[string]string) ([]byte, error) {
 	var buf bytes.Buffer
 
 	delimiter := ";"
@@ -29,7 +29,7 @@ func (f *CSVFormatter) Format(prs []models.PullRequest, dateFormat string, optio
 
 	cols, err := ParseColumns(columnsStr)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	org := options["org"]
@@ -44,23 +44,12 @@ func (f *CSVFormatter) Format(prs []models.PullRequest, dateFormat string, optio
 	for i, pr := range prs {
 		row := make([]string, len(cols))
 		for j, col := range cols {
-			var value string
-			if col.ID == "completed" && dateFormat != "" {
-				value = pr.FormatCompletionDate(dateFormat)
-			} else if col.ID == "created" && dateFormat != "" {
-				if pr.CreationDate.IsZero() {
-					value = "N/A"
-				} else {
-					value = pr.CreationDate.Format(dateFormat)
-				}
-			} else {
-				value = col.GetValue(pr, i+1, org, project)
-			}
+			value := FormatColumnValue(pr, col, i+1, dateFormat, org, project)
 			escapedValue := strings.ReplaceAll(value, `"`, `""`)
 			row[j] = fmt.Sprintf(`"%s"`, escapedValue)
 		}
 		buf.WriteString(strings.Join(row, delimiter) + "\n")
 	}
 
-	return buf.String(), nil
+	return buf.Bytes(), nil
 }

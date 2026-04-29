@@ -16,7 +16,7 @@ func TestPullRequest_GetWebURL(t *testing.T) {
 	}
 
 	url := pr.GetWebURL("myorg", "myproject")
-	expected := "https://myorg.visualstudio.com/myproject/_git/my-repo/pullrequest/123"
+	expected := "https://dev.azure.com/myorg/myproject/_git/my-repo/pullrequest/123"
 	assert.Equal(t, expected, url)
 }
 

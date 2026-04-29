@@ -17,9 +17,9 @@ GIT_COMMIT=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE=$(shell date -u '+%Y-%m-%d_%H:%M:%S')
 
 # Build flags
-LDFLAGS=-ldflags "-X github.com/yourusername/azure-pr-cli/cmd.Version=$(VERSION) \
-                  -X github.com/yourusername/azure-pr-cli/cmd.GitCommit=$(GIT_COMMIT) \
-                  -X github.com/yourusername/azure-pr-cli/cmd.BuildDate=$(BUILD_DATE)"
+LDFLAGS=-ldflags "-X github.com/CodellaSoftware/azure-pr-cli/cmd.Version=$(VERSION) \
+                  -X github.com/CodellaSoftware/azure-pr-cli/cmd.GitCommit=$(GIT_COMMIT) \
+                  -X github.com/CodellaSoftware/azure-pr-cli/cmd.BuildDate=$(BUILD_DATE)"
 
 # Colors for output
 COLOR_RESET=\033[0m

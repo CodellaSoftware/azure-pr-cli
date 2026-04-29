@@ -14,9 +14,9 @@ func NewTableFormatter() *TableFormatter {
 	return &TableFormatter{}
 }
 
-func (f *TableFormatter) Format(prs []models.PullRequest, dateFormat string, options map[string]string) (string, error) {
+func (f *TableFormatter) Format(prs []models.PullRequest, dateFormat string, options map[string]string) ([]byte, error) {
 	if len(prs) == 0 {
-		return "No pull requests found for the specified criteria.\n", nil
+		return []byte("No pull requests found for the specified criteria.\n"), nil
 	}
 
 	columnsStr := options["columns"]
@@ -26,7 +26,7 @@ func (f *TableFormatter) Format(prs []models.PullRequest, dateFormat string, opt
 
 	cols, err := ParseColumns(columnsStr)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	org := options["org"]
@@ -56,17 +56,7 @@ func (f *TableFormatter) Format(prs []models.PullRequest, dateFormat string, opt
 	for i, pr := range prs {
 		row := make([]string, len(cols))
 		for j, col := range cols {
-			if col.ID == "completed" && dateFormat != "" {
-				row[j] = pr.FormatCompletionDate(dateFormat)
-			} else if col.ID == "created" && dateFormat != "" {
-				if pr.CreationDate.IsZero() {
-					row[j] = "N/A"
-				} else {
-					row[j] = pr.CreationDate.Format(dateFormat)
-				}
-			} else {
-				row[j] = col.GetValue(pr, i+1, org, project)
-			}
+			row[j] = FormatColumnValue(pr, col, i+1, dateFormat, org, project)
 		}
 		table.Append(row)
 	}
@@ -75,5 +65,5 @@ func (f *TableFormatter) Format(prs []models.PullRequest, dateFormat string, opt
 
 	buf.WriteString(fmt.Sprintf("\nTotal PRs: %d\n", len(prs)))
 
-	return buf.String(), nil
+	return buf.Bytes(), nil
 }

@@ -5,5 +5,5 @@ import (
 )
 
 type Formatter interface {
-	Format(prs []models.PullRequest, dateFormat string, options map[string]string) (string, error)
+	Format(prs []models.PullRequest, dateFormat string, options map[string]string) ([]byte, error)
 }

@@ -538,23 +538,7 @@ func applyPlaceholders(templateRowXML string, pr models.PullRequest, index int, 
 			return match
 		}
 
-		var value string
-		switch col.ID {
-		case "completed":
-			value = pr.FormatCompletionDate(dateFormat)
-		case "created":
-			if pr.CreationDate.IsZero() {
-				value = "N/A"
-			} else if dateFormat != "" {
-				value = pr.CreationDate.Format(dateFormat)
-			} else {
-				value = pr.CreationDate.Format("2006-01-02 15:04:05")
-			}
-		default:
-			value = col.GetValue(pr, index, org, project)
-		}
-
-		return xmlEscape(value)
+		return xmlEscape(FormatColumnValue(pr, col, index, dateFormat, org, project))
 	})
 }
 

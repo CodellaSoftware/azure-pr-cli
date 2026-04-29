@@ -38,7 +38,7 @@ type PRListResponse struct {
 }
 
 func (pr *PullRequest) GetWebURL(organization, project string) string {
-	return fmt.Sprintf("https://%s.visualstudio.com/%s/_git/%s/pullrequest/%d",
+	return fmt.Sprintf("https://dev.azure.com/%s/%s/_git/%s/pullrequest/%d",
 		organization, project, pr.Repository.Name, pr.ID)
 }
 

@@ -51,18 +51,7 @@ func (f *XLSXFormatter) Format(prs []models.PullRequest, dateFormat string, opti
 				return nil, fmt.Errorf("failed to get cell name: %w", err)
 			}
 
-			var value string
-			if col.ID == "completed" && dateFormat != "" {
-				value = pr.FormatCompletionDate(dateFormat)
-			} else if col.ID == "created" && dateFormat != "" {
-				if pr.CreationDate.IsZero() {
-					value = "N/A"
-				} else {
-					value = pr.CreationDate.Format(dateFormat)
-				}
-			} else {
-				value = col.GetValue(pr, rowIdx+1, org, project)
-			}
+			value := FormatColumnValue(pr, col, rowIdx+1, dateFormat, org, project)
 
 			if err := file.SetCellValue(sheetName, cell, value); err != nil {
 				return nil, fmt.Errorf("failed to set cell value: %w", err)

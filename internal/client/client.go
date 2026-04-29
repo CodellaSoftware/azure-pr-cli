@@ -18,6 +18,12 @@ const (
 	baseURL    = "https://dev.azure.com"
 )
 
+type connectionDataResponse struct {
+	AuthenticatedUser struct {
+		ID string `json:"id"`
+	} `json:"authenticatedUser"`
+}
+
 type AzureDevOpsClient struct {
 	config     *config.Config
 	httpClient *http.Client
@@ -35,10 +41,15 @@ func NewAzureDevOpsClient(cfg *config.Config) *AzureDevOpsClient {
 }
 
 func (c *AzureDevOpsClient) GetPullRequests(from, to time.Time, status string) ([]models.PullRequest, error) {
+	currentUserID, err := c.resolveCurrentUserID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve current user: %w", err)
+	}
+
 	var allPRs []models.PullRequest
 
 	for _, repo := range c.config.Repositories {
-		prs, err := c.getPullRequestsForRepository(repo, from, to, status)
+		prs, err := c.getPullRequestsForRepository(repo, from, to, status, currentUserID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch PRs for repository %s: %w", repo, err)
 		}
@@ -66,8 +77,8 @@ func (c *AzureDevOpsClient) GetPullRequests(from, to time.Time, status string) (
 	return allPRs, nil
 }
 
-func (c *AzureDevOpsClient) getPullRequestsForRepository(repo string, from, to time.Time, status string) ([]models.PullRequest, error) {
-	url := c.buildURL(repo, from, status)
+func (c *AzureDevOpsClient) getPullRequestsForRepository(repo string, from, to time.Time, status, creatorID string) ([]models.PullRequest, error) {
+	url := c.buildURL(repo, from, status, creatorID)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -104,7 +115,7 @@ func (c *AzureDevOpsClient) getPullRequestsForRepository(repo string, from, to t
 	return filteredPRs, nil
 }
 
-func (c *AzureDevOpsClient) buildURL(repo string, from time.Time, status string) string {
+func (c *AzureDevOpsClient) buildURL(repo string, from time.Time, status, creatorID string) string {
 	url := fmt.Sprintf(
 		"%s/%s/%s/_apis/git/repositories/%s/pullrequests?api-version=%s",
 		c.baseURL,
@@ -119,8 +130,49 @@ func (c *AzureDevOpsClient) buildURL(repo string, from time.Time, status string)
 	}
 
 	url += fmt.Sprintf("&searchCriteria.minTime=%s", from.Format(time.RFC3339))
+	url += fmt.Sprintf("&searchCriteria.creatorId=%s", creatorID)
 
 	return url
+}
+
+func (c *AzureDevOpsClient) resolveCurrentUserID() (string, error) {
+	url := fmt.Sprintf("%s/%s/_apis/connectionData", c.baseURL, c.config.Organization)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.setAuthHeaders(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var data connectionDataResponse
+	if err := json.Unmarshal(body, &data); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if data.AuthenticatedUser.ID == "" {
+		return "", fmt.Errorf("could not determine authenticated user ID from connection data")
+	}
+
+	return data.AuthenticatedUser.ID, nil
 }
 
 func (c *AzureDevOpsClient) setAuthHeaders(req *http.Request) {

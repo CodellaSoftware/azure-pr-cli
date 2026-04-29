@@ -46,15 +46,16 @@ func TestTableFormatter(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
 
-	assert.Contains(t, output, "#")
-	assert.Contains(t, output, "REPO NAME")
-	assert.Contains(t, output, "PR NAME")
-	assert.Contains(t, output, "COMPLETION DATE")
-	assert.Contains(t, output, "PR URL")
-	assert.Contains(t, output, "test-repo")
-	assert.Contains(t, output, "Add new feature")
-	assert.Contains(t, output, "Fix bug in login")
-	assert.Contains(t, output, "Total PRs: 2")
+	out := string(output)
+	assert.Contains(t, out, "#")
+	assert.Contains(t, out, "REPO NAME")
+	assert.Contains(t, out, "PR NAME")
+	assert.Contains(t, out, "COMPLETION DATE")
+	assert.Contains(t, out, "PR URL")
+	assert.Contains(t, out, "test-repo")
+	assert.Contains(t, out, "Add new feature")
+	assert.Contains(t, out, "Fix bug in login")
+	assert.Contains(t, out, "Total PRs: 2")
 }
 
 func TestTableFormatter_EmptyList(t *testing.T) {
@@ -64,7 +65,7 @@ func TestTableFormatter_EmptyList(t *testing.T) {
 	output, err := formatter.Format(prs, "", map[string]string{})
 
 	require.NoError(t, err)
-	assert.Contains(t, output, "No pull requests found")
+	assert.Contains(t, string(output), "No pull requests found")
 }
 
 func TestJSONFormatter(t *testing.T) {
@@ -76,18 +77,14 @@ func TestJSONFormatter(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
 
-	type indexedPR struct {
-		Index int `json:"index"`
-		models.PullRequest
-	}
-	var parsed []indexedPR
-	err = json.Unmarshal([]byte(output), &parsed)
+	var parsed []map[string]string
+	err = json.Unmarshal(output, &parsed)
 	require.NoError(t, err)
 	assert.Len(t, parsed, 2)
-	assert.Equal(t, 1, parsed[0].Index)
-	assert.Equal(t, "Add new feature", parsed[0].Title)
-	assert.Equal(t, 2, parsed[1].Index)
-	assert.Equal(t, "Fix bug in login", parsed[1].Title)
+	assert.Equal(t, "1", parsed[0]["index"])
+	assert.Equal(t, "Add new feature", parsed[0]["title"])
+	assert.Equal(t, "2", parsed[1]["index"])
+	assert.Equal(t, "Fix bug in login", parsed[1]["title"])
 }
 
 func TestJSONFormatter_EmptyList(t *testing.T) {
@@ -99,8 +96,8 @@ func TestJSONFormatter_EmptyList(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
 
-	var parsed []models.PullRequest
-	err = json.Unmarshal([]byte(output), &parsed)
+	var parsed []map[string]string
+	err = json.Unmarshal(output, &parsed)
 	require.NoError(t, err)
 	assert.Len(t, parsed, 0)
 }
@@ -114,7 +111,7 @@ func TestCSVFormatter(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
 
-	lines := strings.Split(strings.TrimSpace(output), "\n")
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	assert.Len(t, lines, 3)
 
 	assert.Contains(t, lines[0], "#")
@@ -137,7 +134,7 @@ func TestCSVFormatter_EmptyList(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
 
-	lines := strings.Split(strings.TrimSpace(output), "\n")
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	assert.Len(t, lines, 1)
 	assert.Contains(t, lines[0], "REPO NAME")
 }
@@ -146,6 +143,8 @@ func TestFormatters_AllImplementInterface(t *testing.T) {
 	var _ Formatter = &TableFormatter{}
 	var _ Formatter = &JSONFormatter{}
 	var _ Formatter = &CSVFormatter{}
+	var _ Formatter = &XLSXFormatter{}
+	var _ Formatter = &DOCXFormatter{}
 }
 
 func TestXLSXFormatter(t *testing.T) {
@@ -180,7 +179,6 @@ func TestXLSXFormatter_WithDateFormat(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
-	assert.True(t, len(output) > 0, "XLSX output should not be empty")
 	assert.Equal(t, "PK", string(output[:2]), "XLSX should be a ZIP file starting with PK")
 }
 
@@ -192,7 +190,6 @@ func TestXLSXFormatter_MissingOptions(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
-	assert.True(t, len(output) > 0, "XLSX output should not be empty")
 }
 
 func TestXLSXFormatter_LongContent(t *testing.T) {
@@ -217,7 +214,6 @@ func TestXLSXFormatter_LongContent(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
-	assert.True(t, len(output) > 0, "XLSX output should handle long content")
 	assert.Equal(t, "PK", string(output[:2]), "XLSX should be a ZIP file starting with PK")
 }
 
@@ -230,12 +226,31 @@ func TestJSONFormatter_WithDateFormat(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
 
-	var parsed []map[string]interface{}
-	err = json.Unmarshal([]byte(output), &parsed)
+	var parsed []map[string]string
+	err = json.Unmarshal(output, &parsed)
 	require.NoError(t, err)
 	assert.Len(t, parsed, 2)
-	assert.Equal(t, float64(1), parsed[0]["index"])
-	assert.Equal(t, float64(2), parsed[1]["index"])
+	assert.Equal(t, "1", parsed[0]["index"])
+	assert.Equal(t, "2", parsed[1]["index"])
+}
+
+func TestJSONFormatter_RespectsColumns(t *testing.T) {
+	formatter := NewJSONFormatter()
+	prs := createTestPRs()
+
+	output, err := formatter.Format(prs, "", map[string]string{"columns": "index,title"})
+
+	require.NoError(t, err)
+
+	var parsed []map[string]string
+	err = json.Unmarshal(output, &parsed)
+	require.NoError(t, err)
+	assert.Len(t, parsed, 2)
+
+	assert.Equal(t, "1", parsed[0]["index"])
+	assert.Equal(t, "Add new feature", parsed[0]["title"])
+	_, hasRepo := parsed[0]["repo"]
+	assert.False(t, hasRepo, "repo column should not be present when not requested")
 }
 
 func TestCSVFormatter_WithCustomDelimiter(t *testing.T) {
@@ -247,7 +262,7 @@ func TestCSVFormatter_WithCustomDelimiter(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
 
-	lines := strings.Split(strings.TrimSpace(output), "\n")
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	assert.Len(t, lines, 3)
 
 	assert.Contains(t, lines[0], "#,REPO NAME,PR NAME")
@@ -263,7 +278,7 @@ func TestCSVFormatter_EmptyDelimiter(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, output)
 
-	lines := strings.Split(strings.TrimSpace(output), "\n")
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	assert.Len(t, lines, 3)
 
 	assert.Contains(t, lines[0], "#;REPO NAME;PR NAME")
