@@ -44,3 +44,14 @@ Thumbs.db
 # AI
 .claude/
 .clinerules/
+.github/AGENTIC_WORKFLOWS.md
+.github/AGENTS.md
+.github/agents/
+.github/copilot-instructions.md
+.github/git-commit-instructions.md
+.github/instructions/
+.github/prompts/
+.github/skills/
+.github/workflows/*.md
+.github/workflows/*.lock.yml
+.github/workflows/shared/
